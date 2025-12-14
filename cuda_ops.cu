@@ -6,7 +6,9 @@
 #include <stdexcept>
 
 static inline void ck(cudaError_t e) {
-    if (e != cudaSuccess) throw std::runtime_error(cudaGetErrorString(e));
+    if (e != cudaSuccess) {
+        throw std::runtime_error(cudaGetErrorString(e));
+    }
 }
 
 __device__ __forceinline__ float f_log_sqrt(float x) {
@@ -60,6 +62,7 @@ static float reduce_sum_on_gpu(const float* d_in, int64_t n) {
 
     sum_kernel<<<grid, block, block * sizeof(float)>>>(d_in, n, d_block);
     ck(cudaGetLastError());
+    ck(cudaDeviceSynchronize());
 
     std::vector<float> h_block(grid);
     ck(cudaMemcpy(h_block.data(), d_block, grid * sizeof(float), cudaMemcpyDeviceToHost));
@@ -79,6 +82,7 @@ static float reduce_max_on_gpu(const float* d_in, int64_t n) {
 
     max_kernel<<<grid, block, block * sizeof(float)>>>(d_in, n, d_block);
     ck(cudaGetLastError());
+    ck(cudaDeviceSynchronize());
 
     std::vector<float> h_block(grid);
     ck(cudaMemcpy(h_block.data(), d_block, grid * sizeof(float), cudaMemcpyDeviceToHost));
@@ -90,13 +94,21 @@ static float reduce_max_on_gpu(const float* d_in, int64_t n) {
 }
 
 float cuda_sum_log_sqrt(const float* hostData, int64_t n) {
+    const int64_t CHUNK = 1ll << 24; // 16,777,216 floats ¡Ö 64MB ÏÔ´æ
     float* d = nullptr;
-    ck(cudaMalloc(&d, n * sizeof(float)));
-    ck(cudaMemcpy(d, hostData, n * sizeof(float), cudaMemcpyHostToDevice));
-    float r = reduce_sum_on_gpu(d, n);
+    ck(cudaMalloc(&d, (size_t)CHUNK * sizeof(float)));
+
+    double total = 0.0;
+    for (int64_t off = 0; off < n; off += CHUNK) {
+        int64_t cur = (off + CHUNK <= n) ? CHUNK : (n - off);
+        ck(cudaMemcpy(d, hostData + off, (size_t)cur * sizeof(float), cudaMemcpyHostToDevice));
+        total += reduce_sum_on_gpu(d, cur);
+    }
+
     ck(cudaFree(d));
-    return r;
+    return (float)total;
 }
+
 
 float cuda_max_log_sqrt(const float* hostData, int64_t n) {
     float* d = nullptr;

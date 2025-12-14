@@ -24,6 +24,7 @@
     <ProjectGuid>{a4d47063-0de4-4d04-b782-7115dca8d244}</ProjectGuid>
     <RootNamespace>Project</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>System</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -54,6 +55,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.props" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -108,6 +110,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -134,13 +137,15 @@
   <ItemGroup>
     <ClCompile Include="master.cpp" />
     <ClCompile Include="net.cpp" />
-    <ClCompile Include="worker.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="cuda_ops.cu" />
-    <None Include="cuda_ops.cuh" />
+    <CudaCompile Include="cuda_ops.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
+    <CudaCompile Include="cuda_ops.cuh" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.1.targets" />
   </ImportGroup>
 </Project>

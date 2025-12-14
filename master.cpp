@@ -3,6 +3,9 @@
 #include "cuda_ops.cuh"
 #include "cpu_sort.h"
 
+#include <iostream>
+#include <exception>
+
 #include <vector>
 #include <iostream>
 #include <windows.h>
@@ -15,7 +18,7 @@ float sum(const float data[], const int len) {
     return (float)s;
 }
 
-float max(const float data[], const int len) {
+float max_function(const float data[], const int len) {
     float m = -INFINITY;
     for (int i = 0; i < len; ++i) {
         float v = logf(sqrtf(data[i]));
@@ -54,7 +57,7 @@ static SOCKET& worker_sock_ref() {
 }
 
 // 你只需要改这里：Worker(B机) 的 IP
-static constexpr const char* WORKER_IP = "192.168.1.11"; // TODO: 改成你的 Worker IP
+const char* WORKER_IP = "127.0.0.1" ; // TODO: 改成你的 Worker IP
 
 static SOCKET get_worker_sock() {
     SOCKET& s = worker_sock_ref();
@@ -144,14 +147,14 @@ float maxSpeedUp(const float data[], const int len) {
 
     SOCKET c = get_worker_sock();
     if (c == INVALID_SOCKET) {
-        return max(aPtr, (int)aN);
+        return max_function(aPtr, (int)aN);
     }
 
     // 下发任务：让 Worker 计算 [mid, totalN) 的最大值
     MsgHeader h{ MAGIC, (uint32_t)Op::MAX, (uint64_t)(totalN - mid), mid, totalN };
     if (!send_all(c, &h, sizeof(h))) {
         reset_worker_sock();
-        return max(aPtr, (int)aN);
+        return max_function(aPtr, (int)aN);
     }
 
     // 本机计算
@@ -246,39 +249,51 @@ static double freqInvMs() {
 }
 
 int main() {
-    // 自测：不传入 data，让两机按规则各自生成数据
-    const int N = (int)DATANUM;
 
-    {
-        LARGE_INTEGER st, ed;
-        QueryPerformanceCounter(&st);
-        float ans = sumSpeedUp(nullptr, N);
-        QueryPerformanceCounter(&ed);
-        std::cout << "[SUM] result=" << ans
-            << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
+    try {
+        // 自测：不传入 data，让两机按规则各自生成数据
+        const int N = (int)DATANUM;
+
+        {
+            LARGE_INTEGER st, ed;
+            QueryPerformanceCounter(&st);
+            float ans = sumSpeedUp(nullptr, N);
+            QueryPerformanceCounter(&ed);
+            std::cout << "[SUM] result=" << ans
+                << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
+        }
+
+        {
+            LARGE_INTEGER st, ed;
+            QueryPerformanceCounter(&st);
+            float ans = maxSpeedUp(nullptr, N);
+            QueryPerformanceCounter(&ed);
+            std::cout << "[MAX] result=" << ans
+                << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
+        }
+
+        {
+            std::vector<float> out((size_t)N);
+            LARGE_INTEGER st, ed;
+            QueryPerformanceCounter(&st);
+            sortSpeedUp(nullptr, N, out.data());
+            QueryPerformanceCounter(&ed);
+            std::cout << "[SORT] done"
+                << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
+            std::cout << "out[0]=" << out[0] << " out[last]=" << out.back() << "\n";
+        }
+
+        // 程序结束会关闭 socket，worker 会因断连退出（符合你当前 worker.cpp 的行为）
+        reset_worker_sock();
+        
+        return 0;
     }
-
-    {
-        LARGE_INTEGER st, ed;
-        QueryPerformanceCounter(&st);
-        float ans = maxSpeedUp(nullptr, N);
-        QueryPerformanceCounter(&ed);
-        std::cout << "[MAX] result=" << ans
-            << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
+    catch (const std::exception& e) {
+        std::cerr << "[FATAL] " << e.what() << std::endl;
+        return 1;
     }
-
-    {
-        std::vector<float> out((size_t)N);
-        LARGE_INTEGER st, ed;
-        QueryPerformanceCounter(&st);
-        sortSpeedUp(nullptr, N, out.data());
-        QueryPerformanceCounter(&ed);
-        std::cout << "[SORT] done"
-            << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
-        std::cout << "out[0]=" << out[0] << " out[last]=" << out.back() << "\n";
+    catch (...) {
+        std::cerr << "[FATAL] unknown exception\n";
+        return 1;
     }
-
-    // 程序结束会关闭 socket，worker 会因断连退出（符合你当前 worker.cpp 的行为）
-    reset_worker_sock();
-    return 0;
 }

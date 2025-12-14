@@ -32,16 +32,13 @@
     <ClCompile Include="master.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="worker.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="cuda_ops.cuh">
+    <CudaCompile Include="cuda_ops.cuh">
       <Filter>头文件</Filter>
-    </None>
-    <None Include="cuda_ops.cu">
+    </CudaCompile>
+    <CudaCompile Include="cuda_ops.cu">
       <Filter>源文件</Filter>
-    </None>
+    </CudaCompile>
   </ItemGroup>
 </Project>

@@ -3,7 +3,7 @@
 #include <cstdint>
 
 #define MAX_THREADS 64
-#define SUBDATANUM 2000000
+#define SUBDATANUM 200000
 #define DATANUM (SUBDATANUM * MAX_THREADS)
 
 static constexpr const char* MASTER_IP = "192.168.1.10"; // TODO: ¸Ä³É Master(A»ú) IP

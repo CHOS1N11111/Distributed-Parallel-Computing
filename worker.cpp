@@ -5,6 +5,11 @@
 #include <vector>
 #include <iostream>
 
+#include <cuda_runtime.h>
+
+#include <exception>
+
+
 static void init_local(std::vector<float>& data, uint64_t begin, uint64_t end) {
     uint64_t n = end - begin;
     data.resize((size_t)n);
@@ -14,45 +19,93 @@ static void init_local(std::vector<float>& data, uint64_t begin, uint64_t end) {
 }
 
 int main() {
-    WsaInit wsa;
-    SOCKET ls = tcp_listen(PORT);
-    std::cout << "[Worker] Listening on " << PORT << "...\n";
-    SOCKET c = tcp_accept(ls);
-    std::cout << "[Worker] Connected.\n";
+    try {
+        WsaInit wsa;
+        std::cout << "[Worker] BOOT OK\n";
 
-    while (true) {
-        MsgHeader h{};
-        if (!recv_all(c, &h, sizeof(h))) break;
-        if (h.magic != MAGIC) break;
+        SOCKET ls = tcp_listen(PORT);
+        std::cout << "[Worker] Listening on " << PORT << "...\n";
+        SOCKET c = tcp_accept(ls);
+        std::cout << "[Worker] Connected.\n";
 
-        std::vector<float> local;
-        init_local(local, h.begin, h.end);
-        int64_t n = (int64_t)local.size();
+        while (true) {
+            std::cout << "[Worker] waiting header...\n";
+            MsgHeader h{};
+            if (!recv_all(c, &h, sizeof(h))) {
+                std::cout << "[Worker] header: magic=" << std::hex << h.magic
+                    << " op=" << std::dec << h.op
+                    << " begin=" << h.begin
+                    << " end=" << h.end
+                    << " len=" << h.len << "\n";
+                break;
+            }
+            std::cout << "[Worker] got header\n";
+            std::cout << "[Worker] header: magic=0x" << std::hex << h.magic
+                << " op=" << std::dec << h.op
+                << " begin=" << h.begin
+                << " end=" << h.end
+                << " len=" << h.len << "\n";
 
-        if (h.op == (uint32_t)Op::SUM) {
-            float part = cuda_sum_log_sqrt(local.data(), n);
-            send_all(c, &part, sizeof(part));
-        }
-        else if (h.op == (uint32_t)Op::MAX) {
-            float part = cuda_max_log_sqrt(local.data(), n);
-            send_all(c, &part, sizeof(part));
-        }
-        else if (h.op == (uint32_t)Op::SORT) {
-            // 本地按 key 排序（原始值数组）
-            quicksort_by_key(local.data(), 0, n - 1);
 
-            // 为了降低 master 端重复算，可以直接把“原始值排序结果”发回去
-            // master 合并时再实时计算 key 输出最终 result
-            uint64_t bytes = (uint64_t)n * sizeof(float);
-            send_all(c, &bytes, sizeof(bytes));
-            send_all(c, local.data(), (size_t)bytes);
+            if (h.magic != MAGIC) {
+                std::cerr << "[Worker] bad magic\n";
+                break;
+            }
+            if (h.op != (uint32_t)Op::SUM && h.op != (uint32_t)Op::MAX && h.op != (uint32_t)Op::SORT) {
+                std::cerr << "[Worker] bad op\n";
+                break;
+            }
+            if (h.end <= h.begin) {
+                std::cerr << "[Worker] bad range\n";
+                break;
+            }
+
+
+            std::vector<float> local;
+            std::cout << "[Worker] init_local...\n";
+            init_local(local, h.begin, h.end);
+            std::cout << "[Worker] init_local done, n=" << local.size() << "\n";
+
+            int dev = -1;
+            auto e = cudaGetDevice(&dev);
+            std::cout << "[Worker] cudaGetDevice=" << (int)e << " dev=" << dev << "\n";
+
+            if (h.op == (uint32_t)Op::SUM) {
+                std::cout << "[Worker] cuda sum...\n";
+                float part = cuda_sum_log_sqrt(local.data(), (int64_t)local.size());
+                std::cout << "[Worker] cuda sum done\n";
+                send_all(c, &part, sizeof(part));
+                std::cout << "[Worker] send sum done\n";
+            }
+            else if (h.op == (uint32_t)Op::MAX) {
+                std::cout << "[Worker] cuda max...\n"; 
+
+                float part = cuda_max_log_sqrt(local.data(), (int64_t)local.size());
+                std::cout << "[Worker] cuda max done\n";
+                send_all(c, &part, sizeof(part));
+                std::cout << "[Worker] send max done\n";
+            }
+            else if (h.op == (uint32_t)Op::SORT) {
+                std::cout << "[Worker] sort...\n";
+                quicksort_by_key(local.data(), 0, (int64_t)local.size() - 1);
+                std::cout << "[Worker] sort done\n";
+                uint64_t bytes = (uint64_t)local.size() * sizeof(float);
+                send_all(c, &bytes, sizeof(bytes));
+                send_all(c, local.data(), (size_t)bytes);
+                std::cout << "[Worker] send sort done\n";
+            }
         }
-        else {
-            break;
-        }
+
+        close_sock(c);
+        close_sock(ls);
+        return 0;
     }
-
-    close_sock(c);
-    close_sock(ls);
-    return 0;
+    catch (const std::exception& e) {
+        std::cerr << "[FATAL Worker] " << e.what() << std::endl;
+        return 1;
+    }
+    catch (...) {
+        std::cerr << "[FATAL Worker] unknown exception" << std::endl;
+        return 1;
+    }
 }
