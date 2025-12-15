@@ -102,4 +102,7 @@ int main() {
         std::cerr << "[FATAL Worker] unknown exception" << std::endl;
         return 1;
     }
+
+    system("pause");
+
 }

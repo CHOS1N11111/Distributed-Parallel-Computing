@@ -265,8 +265,33 @@ static double freqInvMs() {
 int main() {
 
     try {
-        // Բ⣺ data
+		//单机测试
         const int N = (int)DATANUM;
+        std::vector<float> raw;
+        init_local(raw, 0, (uint64_t)N);  // 生成 1..N  (同你现有逻辑) :contentReference[oaicite:4]{index=4}
+
+        auto run5_avg_ms = [&](auto&& fn) {
+            double total = 0;
+            for (int t = 0; t < 5; ++t) {
+                LARGE_INTEGER st, ed;
+                QueryPerformanceCounter(&st);
+                fn();
+                QueryPerformanceCounter(&ed);
+                total += (ed.QuadPart - st.QuadPart) * freqInvMs();
+            }
+            return total / 5.0;
+            };
+
+        std::vector<float> out((size_t)N);
+
+        double t_sum_base = run5_avg_ms([&] { (void)sum(raw.data(), N); });
+        double t_max_base = run5_avg_ms([&] { (void)max(raw.data(), N); });
+        double t_sort_base = run5_avg_ms([&] { (void)sort(raw.data(), N, out.data()); });
+
+        std::cout << "[BASE][SUM ] avg=" << t_sum_base << " ms\n";
+        std::cout << "[BASE][MAX ] avg=" << t_max_base << " ms\n";
+        std::cout << "[BASE][SORT] avg=" << t_sort_base << " ms\n";
+
 
         {
             LARGE_INTEGER st, ed;
@@ -310,4 +335,7 @@ int main() {
         std::cerr << "[FATAL] unknown exception\n";
         return 1;
     }
+
+    system("pause");
+
 }
