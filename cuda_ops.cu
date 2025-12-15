@@ -5,11 +5,24 @@
 #include <vector>
 #include <stdexcept>
 
-static inline void ck(cudaError_t e) {
+static inline void ck(cudaError_t e, const char* where = "") {
     if (e != cudaSuccess) {
-        throw std::runtime_error(cudaGetErrorString(e));
+        const char* s = cudaGetErrorString(e);
+        char buf[256];
+        if (!s) {
+            // ±‹√‚ runtime_error(nullptr) ÷±Ω”±¿¿£
+            snprintf(buf, sizeof(buf), "CUDA error %d at %s (cudaGetErrorString returned NULL)",
+                (int)e, where ? where : "");
+            throw std::runtime_error(buf);
+        }
+        else {
+            snprintf(buf, sizeof(buf), "CUDA error %d at %s: %s",
+                (int)e, where ? where : "", s);
+            throw std::runtime_error(buf);
+        }
     }
 }
+
 
 __device__ __forceinline__ float f_log_sqrt(float x) {
     return logf(sqrtf(x));

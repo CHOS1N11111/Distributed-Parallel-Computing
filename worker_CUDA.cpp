@@ -1,9 +1,11 @@
 ﻿#include "common.h"
 #include "net.h"
-#include "cpu_ops.h"
+#include "cuda_ops.cuh"
 #include "cpu_sort.h"
 #include <vector>
 #include <iostream>
+
+#include <cuda_runtime.h>
 
 #include <exception>
 
@@ -64,18 +66,22 @@ int main() {
             init_local(local, h.begin, h.end);
             std::cout << "[Worker] init_local done, n=" << local.size() << "\n";
 
+            int dev = -1;
+            auto e = cudaGetDevice(&dev);
+            std::cout << "[Worker] cudaGetDevice=" << (int)e << " dev=" << dev << "\n";
+
             if (h.op == (uint32_t)Op::SUM) {
-                std::cout << "[Worker] cpu sum...\n";
-                float part = cpu_sum_log_sqrt(local.data(), (uint64_t)local.size());
-                std::cout << "[Worker] cpu sum done\n";
+                std::cout << "[Worker] cuda sum...\n";
+                float part = cuda_sum_log_sqrt(local.data(), (int64_t)local.size());
+                std::cout << "[Worker] cuda sum done\n";
                 send_all(c, &part, sizeof(part));
                 std::cout << "[Worker] send sum done\n";
             }
             else if (h.op == (uint32_t)Op::MAX) {
-                std::cout << "[Worker] cpu max...\n";
+                std::cout << "[Worker] cuda max...\n";
 
-                float part = cpu_max_log_sqrt(local.data(), (uint64_t)local.size());
-                std::cout << "[Worker] cpu max done\n";
+                float part = cuda_max_log_sqrt(local.data(), (int64_t)local.size());
+                std::cout << "[Worker] cuda max done\n";
                 send_all(c, &part, sizeof(part));
                 std::cout << "[Worker] send max done\n";
             }

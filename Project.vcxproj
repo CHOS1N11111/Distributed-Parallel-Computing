@@ -110,7 +110,8 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -131,18 +132,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="common.h" />
+    <ClInclude Include="cpu_ops.h" />
     <ClInclude Include="cpu_sort.h" />
     <ClInclude Include="net.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="master.cpp" />
     <ClCompile Include="net.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <CudaCompile Include="cuda_ops.cu">
-      <FileType>Document</FileType>
-    </CudaCompile>
-    <CudaCompile Include="cuda_ops.cuh" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

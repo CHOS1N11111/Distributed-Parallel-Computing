@@ -1,25 +1,16 @@
 #include "common.h"
 #include "net.h"
-#include "cpu_ops.h"
+#include "cuda_ops.cuh"
 #include "cpu_sort.h"
 
 #include <iostream>
 #include <exception>
 
 #include <vector>
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 #include <windows.h>
-#ifdef max
-#undef max
-#endif
-#ifdef min
-#undef min
-#endif
 #include <cmath>
 
-// ========== æ±¾Ş¼Ù£ ==========
+// ========== »ù´¡°æ±¾£¨µ¥»ú¡¢ÎŞ¼ÓËÙ£© ==========
 float sum(const float data[], const int len) {
     double s = 0.0;
     for (int i = 0; i < len; ++i) s += logf(sqrtf(data[i]));
@@ -35,12 +26,6 @@ float max_function(const float data[], const int len) {
     return m;
 }
 
-// Assignment-required interface name.
-float max(const float data[], const int len) {
-    return max_function(data, len);
-}
-
-
 float sort(const float data[], const int len, float result[]) {
     std::vector<float> tmp(data, data + len);
     if (len > 1) quicksort_by_key(tmp.data(), 0, len - 1);
@@ -48,11 +33,11 @@ float sort(const float data[], const int len, float result[]) {
     return 0.0f;
 }
 
-// ========== Ë«Ù°æ±¾á¹©Ä½Ó¿Ú£ ==========
-// ËµÒµÒªÌ¨Ô¶Ô¼İ¶Î£â´«ä³¬é¡£
-// ï±£ data/len Æ¥Ó¿Ú£
-// - Ã· data data[0..len) Ã£Ç±Ö±Ó¸Ã±İ£sum/max sort á¿½Ú±ò£©¡
-// -  data ÎªÕ»ã£¬ (begin,end) ò±¾»É±İ£worker Í¬Ä°Î¡
+// ========== Ë«»ú¼ÓËÙ°æ±¾£¨±ØĞëÌá¹©µÄ½Ó¿Ú£© ==========
+// ËµÃ÷£º°´×÷ÒµÒªÇó£¬Á½Ì¨»úÆ÷¸÷×Ô¶ÀÁ¢Éú³É×Ô¼º¸ºÔğµÄÊı¾İ¶Î£¬±ÜÃâ´«Êä³¬´óÊı×é¡£
+// ÕâÀï±£Áô data/len ÒÔÆ¥Åä½Ó¿Ú£º
+// - Èç¹ûµ÷ÓÃ·½´«ÈëÁËÍêÕû data£¨ÇÒ data[0..len) ¿ÉÓÃ£©£¬ÎÒÃÇ±¾»úÖ±½Ó¸´ÓÃ±¾»ú°ë¶ÎÊı¾İ£¨sum/max ²»¿½±´£»sort »á¿½±´°ë¶ÎÓÃÓÚ±¾µØÅÅĞò£©¡£
+// - Èô data Îª¿Õ»ò²»×ã£¬Ôò°´ (begin,end) ¹æÔò±¾»úÉú³É±¾»ú°ë¶ÎÊı¾İ£»worker ¶ËÍ¬ÀíÉú³ÉËü¸ºÔğµÄ°ë¶Î¡£
 
 static void init_local(std::vector<float>& data, uint64_t begin, uint64_t end) {
     uint64_t n = end - begin;
@@ -70,8 +55,8 @@ static SOCKET& worker_sock_ref() {
     return s;
 }
 
-// Ö»Òªï£ºWorker(B)  IP
-const char* WORKER_IP = "127.0.0.1"; // TODO: Ä³ Worker IP
+// ÄãÖ»ĞèÒª¸ÄÕâÀï£ºWorker(B»ú) µÄ IP
+const char* WORKER_IP = "127.0.0.1" ; // TODO: ¸Ä³ÉÄãµÄ Worker IP
 
 static SOCKET get_worker_sock() {
     SOCKET& s = worker_sock_ref();
@@ -89,7 +74,7 @@ static void reset_worker_sock() {
     }
 }
 
-// -------- sumSpeedUpñ»®·  Ô¶Ö´  Ø´  Ï² --------
+// -------- sumSpeedUp£ºÈÎÎñ»®·Ö ¡ú Ô¶³ÌÖ´ĞĞ ¡ú »Ø´« ¡ú ºÏ²¢ --------
 float sumSpeedUp(const float data[], const int len) {
     ensure_wsa_inited();
     if (len <= 0) return 0.0f;
@@ -97,14 +82,14 @@ float sumSpeedUp(const float data[], const int len) {
     const uint64_t totalN = (uint64_t)len;
     const uint64_t mid = totalN / 2;
 
-    // Ö¸ë£¨Ê¡Ú´æ£©
-    //  data Ã£ò±¾» [0,mid)
+    // ±¾»ú°ë¶ÎÊı¾İÖ¸Õë£¨²»¿½±´£¬¾¡Á¿Ê¡ÄÚ´æ£©
+    // Èô data ²»¿ÉÓÃ£¬Ôò±¾»úÉú³É [0,mid)
     std::vector<float> localA;
     const float* aPtr = nullptr;
     int64_t aN = (int64_t)mid;
 
     if (data && (uint64_t)len >= mid) {
-        aPtr = data; // Ö± data[0..mid)
+        aPtr = data; // Ö±½ÓÓÃ data[0..mid)
     }
     else {
         init_local(localA, 0, mid);
@@ -114,21 +99,21 @@ float sumSpeedUp(const float data[], const int len) {
 
     SOCKET c = get_worker_sock();
     if (c == INVALID_SOCKET) {
-        // Worker Ã£Ë»Îªã£¨Ö¤È·
+        // Worker ²»¿ÉÓÃ£ºÍË»¯Îª±¾»ú¼ÆËã£¨±£Ö¤¹¦ÄÜÕıÈ·£©
         return sum(aPtr, (int)aN);
     }
 
-    // Â· Worker  [mid, totalN) Ä²Öº
+    // ÏÂ·¢ÈÎÎñ£ºÈÃ Worker ¼ÆËã [mid, totalN) µÄ²¿·ÖºÍ
     MsgHeader h{ MAGIC, (uint32_t)Op::SUM, (uint64_t)(totalN - mid), mid, totalN };
     if (!send_all(c, &h, sizeof(h))) {
         reset_worker_sock();
         return sum(aPtr, (int)aN);
     }
 
-    // 
-    float aPart = cpu_sum_log_sqrt(aPtr, aN);
+    // ±¾»ú¼ÆËã
+    float aPart = cuda_sum_log_sqrt(aPtr, aN);
 
-    //  Worker Ï²
+    // »ØÊÕ Worker ½á¹û²¢ºÏ²¢
     float bPart = 0.0f;
     if (!recv_all(c, &bPart, sizeof(bPart))) {
         reset_worker_sock();
@@ -138,7 +123,7 @@ float sumSpeedUp(const float data[], const int len) {
     return aPart + bPart;
 }
 
-// -------- maxSpeedUpñ»®·  Ô¶Ö´  Ø´  Ï² --------
+// -------- maxSpeedUp£ºÈÎÎñ»®·Ö ¡ú Ô¶³ÌÖ´ĞĞ ¡ú »Ø´« ¡ú ºÏ²¢ --------
 float maxSpeedUp(const float data[], const int len) {
     ensure_wsa_inited();
     if (len <= 0) return -INFINITY;
@@ -164,17 +149,17 @@ float maxSpeedUp(const float data[], const int len) {
         return max_function(aPtr, (int)aN);
     }
 
-    // Â· Worker  [mid, totalN) Öµ
+    // ÏÂ·¢ÈÎÎñ£ºÈÃ Worker ¼ÆËã [mid, totalN) µÄ×î´óÖµ
     MsgHeader h{ MAGIC, (uint32_t)Op::MAX, (uint64_t)(totalN - mid), mid, totalN };
     if (!send_all(c, &h, sizeof(h))) {
         reset_worker_sock();
         return max_function(aPtr, (int)aN);
     }
 
-    // 
-    float aMax = cpu_max_log_sqrt(aPtr, aN);
+    // ±¾»ú¼ÆËã
+    float aMax = cuda_max_log_sqrt(aPtr, aN);
 
-    //  Worker Ï²
+    // »ØÊÕ Worker ½á¹û²¢ºÏ²¢
     float bMax = -INFINITY;
     if (!recv_all(c, &bMax, sizeof(bMax))) {
         reset_worker_sock();
@@ -184,8 +169,8 @@ float maxSpeedUp(const float data[], const int len) {
     return (aMax > bMax ? aMax : bMax);
 }
 
-// -------- sortSpeedUpñ»®·  Ô¶Ö´  Ø´  Ï² --------
-// Ô¼result[] Ç¡È« log(sqrt(.)) Ğ¡ãµ±Ç° merge_to_transformed Æ£
+// -------- sortSpeedUp£ºÈÎÎñ»®·Ö ¡ú Ô¶³ÌÖ´ĞĞ ¡ú »Ø´« ¡ú ºÏ²¢ --------
+// Ô¼¶¨£ºresult[] Êä³öµÄÊÇ¡°È«¾ÖÅÅĞòºóµÄ log(sqrt(.)) ĞòÁĞ¡±£¨·ûºÏÄãµ±Ç° merge_to_transformed µÄÉè¼Æ£©
 float sortSpeedUp(const float data[], const int len, float result[]) {
     ensure_wsa_inited();
     if (len <= 0 || !result) return 0.0f;
@@ -193,7 +178,7 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
     const uint64_t totalN = (uint64_t)len;
     const uint64_t mid = totalN / 2;
 
-    // Î£ÒªÔ­Ø½Ğ¿Ğ´   vectorÎ£
+    // ±¾»ú°ë¶Î£ºÅÅĞòĞèÒªÔ­µØ½»»»£¬Òò´ËÕâÀï±ØĞëÓĞ¿ÉĞ´Êı×é ¡ú ²ÉÓÃ vector£¨¿½±´°ë¶Î£©
     std::vector<float> localA;
     if (data && (uint64_t)len >= mid) {
         localA.assign(data, data + mid);
@@ -204,7 +189,7 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
 
     SOCKET c = get_worker_sock();
     if (c == INVALID_SOCKET) {
-        // Worker Ã£Ë»ÎªÈ«ò£¨±Ö¤È·
+        // Worker ²»¿ÉÓÃ£ºÍË»¯Îª±¾»ú¶ÔÈ«Á¿ÅÅĞò£¨±£Ö¤ÕıÈ·£©
         std::vector<float> full;
         if (data && (uint64_t)len >= totalN) full.assign(data, data + totalN);
         else init_local(full, 0, totalN);
@@ -213,15 +198,15 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
         for (int i = 0; i < len; ++i) result[i] = key_log_sqrt(full[(size_t)i]);
         return 0.0f;
     }
-    
-    
+
+    // ÏÂ·¢ÈÎÎñ£ºÈÃ Worker ÅÅĞò [mid, totalN) ²¢»Ø´«¡°ÅÅĞòºóµÄÔ­Ê¼ float ÖµÊı×é¡±
     MsgHeader h{ MAGIC, (uint32_t)Op::SORT, (uint64_t)(totalN - mid), mid, totalN };
     if (!send_all(c, &h, sizeof(h))) {
         reset_worker_sock();
-        return sortSpeedUp(data, len, result); // Ò» fallbackßµ Worker Ã·Ö§
+        return sortSpeedUp(data, len, result); // ÔÙ×ßÒ»´Î fallback£¨»á×ßµ½ÉÏÃæµÄ Worker ²»¿ÉÓÃ·ÖÖ§£©
     }
 
-    //  Worker Ø´ bytes
+    // ½ÓÊÕ Worker »Ø´«£ºÏÈÊÕ bytes£¬ÔÙÊÕÊı×é
     uint64_t bBytes = 0;
     if (!recv_all(c, &bBytes, sizeof(bBytes))) {
         reset_worker_sock();
@@ -239,10 +224,10 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
         return sort(data, len, result);
     }
 
-    // ò£¨° key
+    // ±¾»ú°ë¶ÎÅÅĞò£¨°´ key£©
     if (localA.size() > 1) quicksort_by_key(localA.data(), 0, (int64_t)localA.size() - 1);
 
-    // é²¢ result[] Ğ´ log(sqrt(.)) 
+    // ¹é²¢Êä³ö£º×îÖÕ result[] Ğ´Èë log(sqrt(.)) µÄÉıĞòĞòÁĞ
     merge_to_transformed(
         localA.data(), (int64_t)localA.size(),
         sortedB.data(), (int64_t)sortedB.size(),
@@ -252,7 +237,7 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
     return 0.0f;
 }
 
-// ====== Ñ¡Ô¼Ä² mainÊ¦Ó¿Ê±Ôº ======
+// ====== £¨¿ÉÑ¡£©Äã×Ô¼ºµÄ²âÊÔ main£ºÀÏÊ¦²â½Ó¿ÚÊ±¿ÉÒÔºöÂÔ ======
 static double freqInvMs() {
     static double v = [] {
         LARGE_INTEGER f;
@@ -265,7 +250,7 @@ static double freqInvMs() {
 int main() {
 
     try {
-        // Ô²â£º data
+        // ×Ô²â£º²»´«Èë data£¬ÈÃÁ½»ú°´¹æÔò¸÷×ÔÉú³ÉÊı¾İ
         const int N = (int)DATANUM;
 
         {
@@ -297,9 +282,9 @@ int main() {
             std::cout << "out[0]=" << out[0] << " out[last]=" << out.back() << "\n";
         }
 
-        // Ø± socketworker Ë³ãµ±Ç° worker.cpp Îª
+        // ³ÌĞò½áÊø»á¹Ø±Õ socket£¬worker »áÒò¶ÏÁ¬ÍË³ö£¨·ûºÏÄãµ±Ç° worker.cpp µÄĞĞÎª£©
         reset_worker_sock();
-
+        
         return 0;
     }
     catch (const std::exception& e) {
