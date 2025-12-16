@@ -82,6 +82,11 @@ int main() {
             else if (h.op == (uint32_t)Op::SORT) {
                 std::cout << "[Worker] sort...\n";
                 quicksort_by_key(local.data(), 0, (int64_t)local.size() - 1);
+                std::cout << "[Worker] local[0]=" << local.front()
+                    << " key=" << key_log_sqrt(local.front()) << "\n";
+                std::cout << "[Worker] local[last]=" << local.back()
+                    << " key=" << key_log_sqrt(local.back()) << "\n";
+
                 std::cout << "[Worker] sort done\n";
                 uint64_t bytes = (uint64_t)local.size() * sizeof(float);
                 send_all(c, &bytes, sizeof(bytes));

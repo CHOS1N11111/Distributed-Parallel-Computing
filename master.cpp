@@ -265,10 +265,12 @@ static double freqInvMs() {
 int main() {
 
     try {
-		//单机测试
+
+        /*
+		//单机测试 5次取平均值
         const int N = (int)DATANUM;
         std::vector<float> raw;
-        init_local(raw, 0, (uint64_t)N);  // 生成 1..N  (同你现有逻辑) :contentReference[oaicite:4]{index=4}
+        init_local(raw, 0, (uint64_t)N);  // 
 
         auto run5_avg_ms = [&](auto&& fn) {
             double total = 0;
@@ -288,9 +290,33 @@ int main() {
         double t_max_base = run5_avg_ms([&] { (void)max(raw.data(), N); });
         double t_sort_base = run5_avg_ms([&] { (void)sort(raw.data(), N, out.data()); });
 
-        std::cout << "[BASE][SUM ] avg=" << t_sum_base << " ms\n";
-        std::cout << "[BASE][MAX ] avg=" << t_max_base << " ms\n";
-        std::cout << "[BASE][SORT] avg=" << t_sort_base << " ms\n";
+        std::cout << "[BASE][RUN5_AVG][SUM ] avg=" << t_sum_base << " ms\n";
+        std::cout << "[BASE][RUN5_AVG][MAX ] avg=" << t_max_base << " ms\n";
+        std::cout << "[BASE][RUN5_AVG][SORT] avg=" << t_sort_base << " ms\n";
+        */
+
+        // 单机测试（只测一次）
+        const int N = (int)DATANUM;
+        std::vector<float> raw;
+        init_local(raw, 0, (uint64_t)N);
+
+        auto run1_ms = [&](auto&& fn) {
+            LARGE_INTEGER st, ed;
+            QueryPerformanceCounter(&st);
+            fn();
+            QueryPerformanceCounter(&ed);
+            return (ed.QuadPart - st.QuadPart) * freqInvMs();
+            };
+
+        std::vector<float> out((size_t)N);
+
+        double t_sum_base = run1_ms([&] { (void)sum(raw.data(), N); });
+        double t_max_base = run1_ms([&] { (void)max(raw.data(), N); });
+        double t_sort_base = run1_ms([&] { (void)sort(raw.data(), N, out.data()); });
+
+        std::cout << "[BASE][RUN1][SUM ] elapsed=" << t_sum_base << " ms\n";
+        std::cout << "[BASE][RUN1][MAX ] elapsed=" << t_max_base << " ms\n";
+        std::cout << "[BASE][RUN1][SORT] elapsed=" << t_sort_base << " ms\n";
 
 
         {
@@ -319,7 +345,25 @@ int main() {
             QueryPerformanceCounter(&ed);
             std::cout << "[SORT] done"
                 << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
-            std::cout << "out[0]=" << out[0] << " out[last]=" << out.back() << "\n";
+            int midIndex = N / 2;
+
+            //验证输出
+            // 前10个
+            std::cout << "out[0..9]: ";
+            for (int i = 0; i < 10 && i < N; ++i) std::cout << out[i] << (i == 9 ? '\n' : ' ');
+
+            // 中间5个
+            std::cout << "out[mid-2..mid+2]: ";
+            int L = imax(0, midIndex - 2);
+            int R = imin(N - 1, midIndex + 2);
+            for (int i = L; i <= R; ++i) std::cout << out[i] << (i == R ? '\n' : ' ');
+
+            // 最后10个
+            std::cout << "out[last-9..last]: ";
+            int start = imax(0, N - 10);
+            for (int i = start; i < N; ++i) std::cout << out[i] << (i == N - 1 ? '\n' : ' ');
+
+
         }
 
         // ر socketworker ˳㵱ǰ worker.cpp Ϊ
