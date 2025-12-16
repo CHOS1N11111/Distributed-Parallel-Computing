@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-# 你的显卡 RTX 4060 是 Ada，一般用 89；如果你不确定，也可以先写 86/89 都行
+
 # 4060 通常 compute capability = 8.9
 set(CMAKE_CUDA_ARCHITECTURES 89)
 

@@ -267,7 +267,7 @@ int main() {
     try {
 
         /*
-		//单机测试 5次取平均值
+		//单机测试 （5次取平均值）
         const int N = (int)DATANUM;
         std::vector<float> raw;
         init_local(raw, 0, (uint64_t)N);  // 

@@ -1,14 +1,17 @@
-#pragma once
+ï»¿#pragma once
 
 #include <cstdint>
 
 #define MAX_THREADS 64
+// æ¯ä¸ªçº¿ç¨‹é»˜è®¤å¤„ç†çš„å…ƒç´ æ•°ï¼Œä½œä¸ºåŸºå‡†å—å¤§å°
 #define SUBDATANUM 2000000
-//2000000
-#define DATANUM (SUBDATANUM * MAX_THREADS) //128,000,000
+// å†…ç½®åŸºå‡†æ€»é‡ï¼š64 * 2,000,000 = 128,000,000 ä¸ª float
+#define DATANUM (SUBDATANUM * MAX_THREADS)
 
-static constexpr const char* MASTER_IP = "192.168.1.10"; // TODO: ¸Ä³É Master(A»ú) IP
-static constexpr uint16_t PORT = 50001;                  // ¿É¸Ä¶Ë¿Ú
+// é¢„ç•™ï¼šè‹¥ worker éœ€è¦å›žè¿ž master æ—¶ä½¿ç”¨ï¼ˆå½“å‰æœªç”¨ï¼‰
+static constexpr const char* MASTER_IP = "192.168.1.10"; //TODO
+// ä¸»ä»Žé€šä¿¡å…±ç”¨çš„ TCP ç«¯å£
+static constexpr uint16_t PORT = 50001;
 
 enum class Op : uint32_t {
     SUM = 1,
@@ -16,20 +19,19 @@ enum class Op : uint32_t {
     SORT = 3
 };
 
-//¶¨Òå×î´ó×îÐ¡Öµ±È½Ï£¬½öÓÃÓÚÅÅÐò½á¹ûÕ¹Ê¾
+// è¿™ä¸¤ä¸ªmaxå’Œminå‡½æ•°ä»…ç”¨äºŽæ‰“å°æŽ’åºç»“æžœç¤ºä¾‹ï¼Œä¸å‚ä¸Žæ ¸å¿ƒè®¡ç®—
 static inline int imax(int a, int b) { return a > b ? a : b; }
-static inline int imin(int a, int b) { return a < b ? a : b; } 
-//º¯ÊýÎ´ÓÃÓÚËã·¨ÆäËû²¿·Ö
+static inline int imin(int a, int b) { return a < b ? a : b; }
+//
 
-
-// ÍøÂçÏûÏ¢£ºÏÈ·¢ header£¬ÔÙ·¢ payload£¨ÈôÓÐ£©
+// ç½‘ç»œåè®®ï¼šå…ˆå‘å¤´éƒ¨ï¼Œå†æŒ‰éœ€è¦å‘é€ payload
 #pragma pack(push, 1)
 struct MsgHeader {
     uint32_t magic;     // 'DPCT'
-    uint32_t op;        // Op
-    uint64_t len;       // ±¾´ÎÈÎÎñ±¾µØÊý¾Ý³¤¶È£¨float ¸öÊý£©
-    uint64_t begin;     // È«¾ÖÆðÊ¼ÏÂ±ê£¨ÓÃÓÚ³õÊ¼»¯ÖµÓò£©
-    uint64_t end;       // È«¾Ö½áÊøÏÂ±ê£¨¿ªÇø¼ä£©
+    uint32_t op;        // å¯¹åº” Op æžšä¸¾
+    uint64_t len;       // worker éœ€è¦å¤„ç†çš„ float æ•°é‡ï¼ˆend - beginï¼‰
+    uint64_t begin;     // è´Ÿè´£çš„å…¨å±€èµ·å§‹ä¸‹æ ‡ï¼ˆå«ï¼‰
+    uint64_t end;       // è´Ÿè´£çš„å…¨å±€ç»“æŸä¸‹æ ‡ï¼ˆä¸å«ï¼‰
 };
 #pragma pack(pop)
 

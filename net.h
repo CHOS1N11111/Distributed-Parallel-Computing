@@ -1,5 +1,5 @@
 
-// net.h
+// net.h - 提供 WinSock 初始化与 TCP 封装接口声明
 #pragma once
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>

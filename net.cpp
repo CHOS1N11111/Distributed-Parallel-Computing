@@ -1,19 +1,23 @@
-// net.cpp
+﻿// net.cpp
 #include "net.h"
 #include <stdexcept>
 
+// 初始化/清理 WinSock2
 WsaInit::WsaInit() {
     WSADATA wsa{};
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) throw std::runtime_error("WSAStartup failed");
 }
 WsaInit::~WsaInit() { WSACleanup(); }
 
+// 创建基础 TCP 套接字
 static SOCKET mk_socket() {
+    // 创建 TCP 流式套接字
     SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s == INVALID_SOCKET) throw std::runtime_error("socket failed");
     return s;
 }
 
+// 启动监听（返回监听套接字）
 SOCKET tcp_listen(uint16_t port) {
     SOCKET s = mk_socket();
     sockaddr_in addr{};
@@ -29,12 +33,14 @@ SOCKET tcp_listen(uint16_t port) {
     return s;
 }
 
+// 从监听套接字接受一个连接
 SOCKET tcp_accept(SOCKET listenSock) {
     SOCKET c = accept(listenSock, nullptr, nullptr);
     if (c == INVALID_SOCKET) throw std::runtime_error("accept failed");
     return c;
 }
 
+// 主动连接到指定 IP/端口
 SOCKET tcp_connect(const char* ip, uint16_t port) {
     SOCKET s = mk_socket();
     sockaddr_in addr{};
@@ -46,7 +52,9 @@ SOCKET tcp_connect(const char* ip, uint16_t port) {
     return s;
 }
 
+// 发送指定长度的数据，直到发完
 bool send_all(SOCKET s, const void* data, size_t bytes) {
+    // 循环发送直到字节数耗尽，确保完整发出
     const char* p = (const char*)data;
     while (bytes) {
         int n = send(s, p, (int)bytes, 0);
@@ -56,7 +64,9 @@ bool send_all(SOCKET s, const void* data, size_t bytes) {
     return true;
 }
 
+// 接收指定长度的数据，直到收满
 bool recv_all(SOCKET s, void* data, size_t bytes) {
+    // 循环接收直到拿满指定字节，确保数据完整
     char* p = (char*)data;
     while (bytes) {
         int n = recv(s, p, (int)bytes, 0);
@@ -66,6 +76,7 @@ bool recv_all(SOCKET s, void* data, size_t bytes) {
     return true;
 }
 
+// 安全关闭套接字
 void close_sock(SOCKET s) {
     if (s != INVALID_SOCKET) closesocket(s);
 }
