@@ -20,6 +20,17 @@
 #endif
 #include <cmath>
 
+
+//用于调整两机任务比例
+static inline uint64_t split_mid_30_70(uint64_t totalN) {
+    // master: [0, mid)  约30%
+    // worker: [mid, totalN) 约70%
+    uint64_t mid = totalN * 3 / 10;
+    if (mid == 0) mid = 1;
+    if (mid >= totalN) mid = totalN - 1;
+    return mid;
+}
+
 // ========== 汾޼٣ ==========
 float sum(const float data[], const int len) {
     double s = 0.0;
@@ -72,7 +83,7 @@ static SOCKET& worker_sock_ref() {
 }
 
 // ֻҪWorker(B)  IP
-const char* WORKER_IP = "192.168.137.5"; // TODO: worker IP  //192.168.71.1    //192.168.137.5
+const char* WORKER_IP = "192.168.137.5"; // TODO: worker IP    //192.168.71.1    //192.168.137.5  //本机测试： 127.0.0.1
 
 static SOCKET get_worker_sock() {
     SOCKET& s = worker_sock_ref();
@@ -96,7 +107,7 @@ float sumSpeedUp(const float data[], const int len) {
     if (len <= 0) return 0.0f;
 
     const uint64_t totalN = (uint64_t)len;
-    const uint64_t mid = totalN / 2;
+    const uint64_t mid = split_mid_30_70(totalN);//TODO
 
     // ָ루ʡڴ棩
     //  data ã򱾻 [0,mid)
@@ -145,7 +156,7 @@ float maxSpeedUp(const float data[], const int len) {
     if (len <= 0) return -INFINITY;
 
     const uint64_t totalN = (uint64_t)len;
-    const uint64_t mid = totalN / 2;
+    const uint64_t mid = split_mid_30_70(totalN);//TODO
 
     std::vector<float> localA;
     const float* aPtr = nullptr;
@@ -192,7 +203,7 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
     if (len <= 0 || !result) return 0.0f;
 
     const uint64_t totalN = (uint64_t)len;
-    const uint64_t mid = totalN / 2;
+    const uint64_t mid = split_mid_30_70(totalN);//TODO
 
     // ΣҪԭؽпд   vectorΣ
     std::vector<float> localA;
@@ -268,7 +279,7 @@ int main() {
 
     try {
 
-        /*
+        
 		//单机测试 （5次取平均值）
         const int N = (int)DATANUM;
         std::vector<float> raw;
@@ -290,13 +301,19 @@ int main() {
 
         double t_sum_base = run5_avg_ms([&] { (void)sum(raw.data(), N); });
         double t_max_base = run5_avg_ms([&] { (void)max(raw.data(), N); });
+
+        shuffle_fisher_yates(raw.data(), (uint64_t)raw.size(), 0x20251216ULL); //增加洗牌函数
         double t_sort_base = run5_avg_ms([&] { (void)sort(raw.data(), N, out.data()); });
 
         std::cout << "[BASE][RUN5_AVG][SUM ] avg=" << t_sum_base << " ms\n";
         std::cout << "[BASE][RUN5_AVG][MAX ] avg=" << t_max_base << " ms\n";
         std::cout << "[BASE][RUN5_AVG][SORT] avg=" << t_sort_base << " ms\n";
-        */
-
+        std::cout << "\n";
+        double t_total_base = t_sum_base + t_max_base + t_sort_base;
+        std::cout << "[BASE][RUN5_AVG][TOTAL] elapsed=" << t_total_base << " ms\n";
+        std::cout << "\n";
+        
+        /*
         // 单机测试（只测一次）
         const int N = (int)DATANUM;
         std::vector<float> raw;
@@ -326,7 +343,10 @@ int main() {
         double t_total_base = t_sum_base + t_max_base + t_sort_base;
         std::cout << "[BASE][RUN1][TOTAL] elapsed=" << t_total_base << " ms\n";
         std::cout << "\n";
+        */
 
+        /*
+        //一次
         double t_sum_dual = 0, t_max_dual = 0, t_sort_dual = 0;
         {
             LARGE_INTEGER st, ed;
@@ -381,6 +401,58 @@ int main() {
         double t_total_dual = t_sum_dual + t_max_dual + t_sort_dual;
         std::cout << "[DUAL][TOTAL] elapsed=" << t_total_dual << " ms\n";
         std::cout << "\n";
+        */
+
+        double t_sum_dual_avg = 0, t_max_dual_avg = 0, t_sort_dual_avg = 0;
+
+        // 记录最后一次的结果//
+        float sum_ans = 0.0f;
+        float max_ans = 0.0f;
+
+        std::vector<float> out_dual((size_t)N);
+
+        t_sum_dual_avg = run5_avg_ms([&] {
+            sum_ans = sumSpeedUp(nullptr, N);
+            });
+
+        t_max_dual_avg = run5_avg_ms([&] {
+            max_ans = maxSpeedUp(nullptr, N);
+            });
+
+        t_sort_dual_avg = run5_avg_ms([&] {
+            sortSpeedUp(nullptr, N, out_dual.data());
+            // 读一下结果，确保 out_dual 在 Release 下也不会被“认为没用”//
+            volatile float guard = out_dual[0];
+            (void)guard;
+            });
+
+        // 计时结果输出（平均值）
+        std::cout << "[DUAL][RUN5_AVG][SUM ] result=" << sum_ans << " avg=" << t_sum_dual_avg << " ms\n";
+        std::cout << "[DUAL][RUN5_AVG][MAX ] result=" << max_ans << " avg=" << t_max_dual_avg << " ms\n";
+        std::cout << "[DUAL][RUN5_AVG][SORT] done   avg=" << t_sort_dual_avg << " ms\n";
+
+        double t_total_dual_avg = t_sum_dual_avg + t_max_dual_avg + t_sort_dual_avg;
+        std::cout << "[DUAL][RUN5_AVG][TOTAL] avg=" << t_total_dual_avg << " ms\n\n";
+
+        // 只做一次结果抽查打印（别放进 run5 里）
+        std::cout << std::fixed << std::setprecision(10);
+        int midIndex = N / 2;
+
+        // 前5个
+        std::cout << "out[0..4]:\n ";
+        for (int i = 0; i < 5 && i < N; ++i) std::cout << out_dual[i] << (i == 4 ? '\n' : ' ');
+
+        // 中间5个
+        std::cout << "out[mid-2..mid+2]:\n ";
+        int L = imax(0, midIndex - 2);
+        int R = imin(N - 1, midIndex + 2);
+        for (int i = L; i <= R; ++i) std::cout << out_dual[i] << (i == R ? '\n' : ' ');
+
+        // 最后5个
+        std::cout << "out[last-4..last]:\n";
+        int start = imax(0, N - 5);
+        for (int i = start; i < N; ++i) std::cout << out_dual[i] << (i == N - 1 ? '\n' : ' ');
+
 
         // ر socketworker ˳㵱ǰ worker.cpp Ϊ
         reset_worker_sock();

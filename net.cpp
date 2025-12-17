@@ -1,4 +1,7 @@
 ﻿// net.cpp
+
+#pragma comment(lib, "Ws2_32.lib")
+
 #include "net.h"
 #include <stdexcept>
 

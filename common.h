@@ -9,7 +9,7 @@
 #define DATANUM (SUBDATANUM * MAX_THREADS)
 
 // 预留：若 worker 需要回连 master 时使用
-static constexpr const char* MASTER_IP = "192.168.137.1"; // TODO：
+static constexpr const char* MASTER_IP = "192.168.71.1"; // TODO：
 // 主从通信共用的 TCP 端口
 static constexpr uint16_t PORT = 50001;// 可以更改端口
 
@@ -57,3 +57,4 @@ static inline void shuffle_fisher_yates(float* a, uint64_t n, uint64_t seed = 0x
         float t = a[i]; a[i] = a[j]; a[j] = t;
     }
 }
+
