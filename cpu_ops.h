@@ -14,7 +14,7 @@ inline float cpu_sum_log_sqrt(const float* data, uint64_t n) {
     return (float)s;
 }
 
-// 计算 log(sqrt(x)) 的最大值
+// 计算 log(sqrt(x)) 的最大值//
 inline float cpu_max_log_sqrt(const float* data, uint64_t n) {
     float m = -INFINITY;
     for (uint64_t i = 0; i < n; ++i) {

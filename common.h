@@ -8,10 +8,10 @@
 // 内置基准总量：64 * 2,000,000 = 128,000,000 个 float
 #define DATANUM (SUBDATANUM * MAX_THREADS)
 
-// 预留：若 worker 需要回连 master 时使用（当前未用）
-static constexpr const char* MASTER_IP = "192.168.1.10"; //TODO
+// 预留：若 worker 需要回连 master 时使用
+static constexpr const char* MASTER_IP = "192.168.1.10"; // TODO：
 // 主从通信共用的 TCP 端口
-static constexpr uint16_t PORT = 50001;
+static constexpr uint16_t PORT = 50001;// 可以更改端口
 
 enum class Op : uint32_t {
     SUM = 1,
@@ -36,3 +36,24 @@ struct MsgHeader {
 #pragma pack(pop)
 
 static constexpr uint32_t MAGIC = 0x54435044; // 'DPCT'
+
+// ===== shuffle (Fisher–Yates) =====
+//伪随机数生成器
+static inline uint64_t rng_next_u64(uint64_t& s) {
+    // xorshift64*，够用且快；固定 seed 可复现实验
+    s ^= (s >> 12);
+    s ^= (s << 25);
+    s ^= (s >> 27);
+    return s * 2685821657736338717ULL;
+}
+
+//Fisher–Yates 洗牌算法
+//seed不同，打乱结果不同
+static inline void shuffle_fisher_yates(float* a, uint64_t n, uint64_t seed = 0xC0FFEE123456789ULL) {
+    if (!a || n < 2) return;
+    uint64_t s = seed;
+    for (uint64_t i = n - 1; i > 0; --i) {
+        uint64_t j = rng_next_u64(s) % (i + 1);
+        float t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+}

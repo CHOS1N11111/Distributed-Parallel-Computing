@@ -2,7 +2,8 @@
 #include <cmath>
 #include <cstdint>
 
-//cpu_sort.h：提供按 log(sqrt(x)) 为比较键的排序与归并逻辑，包括 key_log_sqrt、quicksort_by_key 和 merge_to_transformed，用于得到全局有序的 log(sqrt(.)) 序列。
+//cpu_sort.h：
+//提供按 log(sqrt(x)) 为比较键的排序与归并逻辑，包括 key_log_sqrt、quicksort_by_key 和 merge_to_transformed，用于得到全局有序的 log(sqrt(.)) 序列。
 
 //
 static inline float key_log_sqrt(float x) {

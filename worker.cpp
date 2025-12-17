@@ -81,6 +81,8 @@ int main() {
             }
             else if (h.op == (uint32_t)Op::SORT) {
                 std::cout << "[Worker] sort...\n";
+                shuffle_fisher_yates(local.data(), (uint64_t)local.size(),
+                    0xBADC0FFEEULL ^ h.begin); // seed 可用 begin 搅一下，保证每段不同
                 quicksort_by_key(local.data(), 0, (int64_t)local.size() - 1);
                 std::cout << "[Worker] local[0]=" << local.front()
                     << " key=" << key_log_sqrt(local.front()) << "\n";

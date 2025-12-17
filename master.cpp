@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <exception>
+#include <iomanip>
 
 #include <vector>
 #ifndef NOMINMAX
@@ -240,6 +241,7 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
     }
 
     // 򣨰 key
+    shuffle_fisher_yates(localA.data(), (uint64_t)localA.size(), 0x1234ULL);
     if (localA.size() > 1) quicksort_by_key(localA.data(), 0, (int64_t)localA.size() - 1);
 
     // 鲢 result[] д log(sqrt(.)) 
@@ -312,20 +314,27 @@ int main() {
 
         double t_sum_base = run1_ms([&] { (void)sum(raw.data(), N); });
         double t_max_base = run1_ms([&] { (void)max(raw.data(), N); });
+
+        shuffle_fisher_yates(raw.data(), (uint64_t)raw.size(), 0x20251216ULL); //增加洗牌函数
+
         double t_sort_base = run1_ms([&] { (void)sort(raw.data(), N, out.data()); });
 
         std::cout << "[BASE][RUN1][SUM ] elapsed=" << t_sum_base << " ms\n";
         std::cout << "[BASE][RUN1][MAX ] elapsed=" << t_max_base << " ms\n";
         std::cout << "[BASE][RUN1][SORT] elapsed=" << t_sort_base << " ms\n";
+        std::cout << "\n";
+        double t_total_base = t_sum_base + t_max_base + t_sort_base;
+        std::cout << "[BASE][RUN1][TOTAL] elapsed=" << t_total_base << " ms\n";
+        std::cout << "\n";
 
-
+        double t_sum_dual = 0, t_max_dual = 0, t_sort_dual = 0;
         {
             LARGE_INTEGER st, ed;
             QueryPerformanceCounter(&st);
             float ans = sumSpeedUp(nullptr, N);
             QueryPerformanceCounter(&ed);
-            std::cout << "[SUM] result=" << ans
-                << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
+            t_sum_dual = (ed.QuadPart - st.QuadPart) * freqInvMs();
+            std::cout << "[SUM] result=" << ans << " elapsed=" << t_sum_dual << " ms\n";
         }
 
         {
@@ -333,8 +342,8 @@ int main() {
             QueryPerformanceCounter(&st);
             float ans = maxSpeedUp(nullptr, N);
             QueryPerformanceCounter(&ed);
-            std::cout << "[MAX] result=" << ans
-                << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
+            t_max_dual = (ed.QuadPart - st.QuadPart) * freqInvMs();
+            std::cout << "[MAX] result=" << ans << " elapsed=" << t_max_dual << " ms\n";
         }
 
         {
@@ -343,28 +352,35 @@ int main() {
             QueryPerformanceCounter(&st);
             sortSpeedUp(nullptr, N, out.data());
             QueryPerformanceCounter(&ed);
-            std::cout << "[SORT] done"
-                << " elapsed=" << (ed.QuadPart - st.QuadPart) * freqInvMs() << " ms\n";
+            std::cout << std::fixed << std::setprecision(10);
+            t_sort_dual = (ed.QuadPart - st.QuadPart) * freqInvMs();
+            std::cout << "[SORT] done elapsed=" << t_sort_dual << " ms\n";
+
             int midIndex = N / 2;
 
             //验证输出
-            // 前10个
-            std::cout << "out[0..9]: ";
-            for (int i = 0; i < 10 && i < N; ++i) std::cout << out[i] << (i == 9 ? '\n' : ' ');
+            // 前5个
+            std::cout << "out[0..4]:\n ";
+            for (int i = 0; i < 5 && i < N; ++i) std::cout << out[i] << (i == 4 ? '\n' : ' ');
 
             // 中间5个
-            std::cout << "out[mid-2..mid+2]: ";
+            std::cout << "out[mid-2..mid+2]:\n ";
             int L = imax(0, midIndex - 2);
             int R = imin(N - 1, midIndex + 2);
             for (int i = L; i <= R; ++i) std::cout << out[i] << (i == R ? '\n' : ' ');
 
-            // 最后10个
-            std::cout << "out[last-9..last]: ";
-            int start = imax(0, N - 10);
+            // 最后5个
+            std::cout << "out[last-4..last]:\n";
+            int start = imax(0, N - 5);
             for (int i = start; i < N; ++i) std::cout << out[i] << (i == N - 1 ? '\n' : ' ');
 
 
         }
+
+        std::cout << "\n";
+        double t_total_dual = t_sum_dual + t_max_dual + t_sort_dual;
+        std::cout << "[DUAL][TOTAL] elapsed=" << t_total_dual << " ms\n";
+        std::cout << "\n";
 
         // ر socketworker ˳㵱ǰ worker.cpp Ϊ
         reset_worker_sock();
