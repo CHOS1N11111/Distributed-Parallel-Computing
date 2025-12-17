@@ -17,6 +17,17 @@ static SOCKET mk_socket() {
     return s;
 }
 
+// net.cpp
+#include <sstream>
+
+static void throw_wsa(const char* msg) {
+    int e = WSAGetLastError();
+    std::ostringstream oss;
+    oss << msg << " (WSA=" << e << ")";
+    throw std::runtime_error(oss.str());
+}
+
+
 // 启动监听（返回监听套接字）
 SOCKET tcp_listen(uint16_t port) {
     SOCKET s = mk_socket();
@@ -28,8 +39,8 @@ SOCKET tcp_listen(uint16_t port) {
     int opt = 1;
     setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
 
-    if (bind(s, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) throw std::runtime_error("bind failed");
-    if (listen(s, 1) == SOCKET_ERROR) throw std::runtime_error("listen failed");
+    if (bind(s, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) throw_wsa("bind failed");
+    if (listen(s, 1) == SOCKET_ERROR) throw_wsa("listen failed");
     return s;
 }
 
@@ -48,7 +59,7 @@ SOCKET tcp_connect(const char* ip, uint16_t port) {
     addr.sin_port = htons(port);
     if (inet_pton(AF_INET, ip, &addr.sin_addr) != 1) throw std::runtime_error("inet_pton failed");
 
-    if (connect(s, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) throw std::runtime_error("connect failed");
+    if (connect(s, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) throw_wsa("connect failed");
     return s;
 }
 

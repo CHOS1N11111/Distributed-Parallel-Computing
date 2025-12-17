@@ -72,7 +72,7 @@ static SOCKET& worker_sock_ref() {
 }
 
 // ֻҪWorker(B)  IP
-const char* WORKER_IP = "127.0.0.1"; // TODO: ĳ Worker IP
+const char* WORKER_IP = "192.168.137.5"; // TODO: worker IP  //192.168.71.1    //192.168.137.5
 
 static SOCKET get_worker_sock() {
     SOCKET& s = worker_sock_ref();

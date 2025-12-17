@@ -9,7 +9,7 @@
 #define DATANUM (SUBDATANUM * MAX_THREADS)
 
 // 预留：若 worker 需要回连 master 时使用
-static constexpr const char* MASTER_IP = "192.168.1.10"; // TODO：
+static constexpr const char* MASTER_IP = "192.168.137.1"; // TODO：
 // 主从通信共用的 TCP 端口
 static constexpr uint16_t PORT = 50001;// 可以更改端口
 
