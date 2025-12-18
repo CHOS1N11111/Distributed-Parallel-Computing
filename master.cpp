@@ -21,23 +21,25 @@
 #include <cmath>
 
 
-//用于调整两机任务比例
+// 按 3:7 切分任务规模，避免 master 或 worker 分到 0 个元素//
 static inline uint64_t split_mid_30_70(uint64_t totalN) {
-    // master: [0, mid)  约30%
-    // worker: [mid, totalN) 约70%
+    // master: [0, mid) 约 30%//
+    // worker: [mid, totalN) 约 70%//
     uint64_t mid = totalN * 3 / 10;
     if (mid == 0) mid = 1;
     if (mid >= totalN) mid = totalN - 1;
     return mid;
 }
 
-// ========== 汾޼٣ ==========
+// ========== 单机计算接口 ==========//
+// 对 data 做 log(sqrt(x)) 后求和//
 float sum(const float data[], const int len) {
     double s = 0.0;
     for (int i = 0; i < len; ++i) s += logf(sqrtf(data[i]));
     return (float)s;
 }
 
+// 对 data 做 log(sqrt(x)) 后取最大值//
 float max_function(const float data[], const int len) {
     float m = -INFINITY;
     for (int i = 0; i < len; ++i) {
@@ -47,12 +49,13 @@ float max_function(const float data[], const int len) {
     return m;
 }
 
-// Assignment-required interface name.
+// 作业要求的接口命名//
 float max(const float data[], const int len) {
     return max_function(data, len);
 }
 
 
+// 排序后写入 result，元素内容为 log(sqrt(x))//
 float sort(const float data[], const int len, float result[]) {
     std::vector<float> tmp(data, data + len);
     if (len > 1) quicksort_by_key(tmp.data(), 0, len - 1);
@@ -60,31 +63,34 @@ float sort(const float data[], const int len, float result[]) {
     return 0.0f;
 }
 
-// ========== ˫ٰ汾ṩĽӿڣ ==========
-// ˵ҵҪ̨ԶԼݶΣ⴫䳬顣
-// ﱣ data/len ƥӿڣ
-// - ÷ data data[0..len) ãǱֱӸñݣsum/max sort ´ڱ򣩡
-// -  data Ϊջ㣬 (begin,end) 򱾻ɱݣworker ͬİΡ
+// ========== 双机协同接口 ==========
+// 只要保证 data/len 合法即可：
+// - 当 data 指向 data[0..len) 时，直接用 sum/max/sort 计算
+// - 当 data 为空时，master 根据 (begin,end) 生成序列，worker 也按协商范围自行生成
 
+// 生成 [begin, end) 的递增数据//
 static void init_local(std::vector<float>& data, uint64_t begin, uint64_t end) {
     uint64_t n = end - begin;
     data.resize((size_t)n);
     for (uint64_t i = 0; i < n; ++i) data[(size_t)i] = (float)(begin + i + 1);
 }
 
+// 确保 Winsock 只初始化一次//
 static inline void ensure_wsa_inited() {
     static WsaInit wsa;
     (void)wsa;
 }
 
+// 单例形式持有 worker 端 socket//
 static SOCKET& worker_sock_ref() {
     static SOCKET s = INVALID_SOCKET;
     return s;
 }
 
-// ֻҪWorker(B)  IP
+// 修改这里即可替换 worker(B) 的 IP，单机自测可用 127.0.0.1//
 const char* WORKER_IP = "192.168.137.5"; // TODO: worker IP    //192.168.71.1    //192.168.137.5  //本机测试： 127.0.0.1
 
+// 取到已连接的 worker socket，必要时建立连接//
 static SOCKET get_worker_sock() {
     SOCKET& s = worker_sock_ref();
     if (s == INVALID_SOCKET) {
@@ -93,6 +99,7 @@ static SOCKET get_worker_sock() {
     return s;
 }
 
+// 关闭并重置 worker socket，供下次重连//
 static void reset_worker_sock() {
     SOCKET& s = worker_sock_ref();
     if (s != INVALID_SOCKET) {
@@ -101,22 +108,22 @@ static void reset_worker_sock() {
     }
 }
 
-// -------- sumSpeedUp񻮷  Զִ  ش  ϲ --------
+// 双机版 sum：master 计算前半段，worker 计算后半段再求和//
 float sumSpeedUp(const float data[], const int len) {
     ensure_wsa_inited();
     if (len <= 0) return 0.0f;
 
     const uint64_t totalN = (uint64_t)len;
-    const uint64_t mid = split_mid_30_70(totalN);//TODO
+    const uint64_t mid = totalN / 2; // TODO: 可切换为 split_mid_30_70(totalN)
+    //const uint64_t mid = split_mid_30_70(totalN);
 
-    // ָ루ʡڴ棩
-    //  data ã򱾻 [0,mid)
+    // 优先使用用户给的数据//
     std::vector<float> localA;
     const float* aPtr = nullptr;
     int64_t aN = (int64_t)mid;
 
     if (data && (uint64_t)len >= mid) {
-        aPtr = data; // ֱ data[0..mid)
+        aPtr = data; // 直接用 data[0..mid)
     }
     else {
         init_local(localA, 0, mid);
@@ -126,21 +133,21 @@ float sumSpeedUp(const float data[], const int len) {
 
     SOCKET c = get_worker_sock();
     if (c == INVALID_SOCKET) {
-        // Worker ã˻Ϊ㣨֤ȷ
+        // Worker 不可用则退化为单机
         return sum(aPtr, (int)aN);
     }
 
-    // · Worker  [mid, totalN) Ĳֺ
+    // 通知 Worker 处理 [mid, totalN)
     MsgHeader h{ MAGIC, (uint32_t)Op::SUM, (uint64_t)(totalN - mid), mid, totalN };
     if (!send_all(c, &h, sizeof(h))) {
         reset_worker_sock();
         return sum(aPtr, (int)aN);
     }
 
-    // 
+    // 本地计算前半段//
     float aPart = cpu_sum_log_sqrt(aPtr, aN);
 
-    //  Worker ϲ
+    // 等待 Worker 的结果//
     float bPart = 0.0f;
     if (!recv_all(c, &bPart, sizeof(bPart))) {
         reset_worker_sock();
@@ -150,13 +157,14 @@ float sumSpeedUp(const float data[], const int len) {
     return aPart + bPart;
 }
 
-// -------- maxSpeedUp񻮷  Զִ  ش  ϲ --------
+// 双机版 max：master/worker 各算一半，最后取较大值//
 float maxSpeedUp(const float data[], const int len) {
     ensure_wsa_inited();
     if (len <= 0) return -INFINITY;
 
     const uint64_t totalN = (uint64_t)len;
-    const uint64_t mid = split_mid_30_70(totalN);//TODO
+    const uint64_t mid = totalN / 2; // TODO: 可切换为 split_mid_30_70(totalN)
+    //const uint64_t mid = split_mid_30_70(totalN);
 
     std::vector<float> localA;
     const float* aPtr = nullptr;
@@ -175,18 +183,18 @@ float maxSpeedUp(const float data[], const int len) {
     if (c == INVALID_SOCKET) {
         return max_function(aPtr, (int)aN);
     }
-
-    // · Worker  [mid, totalN) ֵ
+    //
+    // 通知 Worker 处理 [mid, totalN)//
     MsgHeader h{ MAGIC, (uint32_t)Op::MAX, (uint64_t)(totalN - mid), mid, totalN };
     if (!send_all(c, &h, sizeof(h))) {
         reset_worker_sock();
         return max_function(aPtr, (int)aN);
     }
 
-    // 
+    // 本地计算前半段//
     float aMax = cpu_max_log_sqrt(aPtr, aN);
 
-    //  Worker ϲ
+    // 等待 Worker 的结果//
     float bMax = -INFINITY;
     if (!recv_all(c, &bMax, sizeof(bMax))) {
         reset_worker_sock();
@@ -196,16 +204,16 @@ float maxSpeedUp(const float data[], const int len) {
     return (aMax > bMax ? aMax : bMax);
 }
 
-// -------- sortSpeedUp񻮷  Զִ  ش  ϲ --------
-// Լresult[] ǡȫ log(sqrt(.)) С㵱ǰ merge_to_transformed ƣ
+// 双机版 sort：两端各自排序后再归并，result 写入 log(sqrt(.))//
 float sortSpeedUp(const float data[], const int len, float result[]) {
     ensure_wsa_inited();
     if (len <= 0 || !result) return 0.0f;
 
     const uint64_t totalN = (uint64_t)len;
-    const uint64_t mid = split_mid_30_70(totalN);//TODO
+    const uint64_t mid = totalN / 2; // TODO: 可切换为 split_mid_30_70(totalN)
+    //const uint64_t mid = split_mid_30_70(totalN);
 
-    // ΣҪԭؽпд   vectorΣ
+    // 尽可能直接复用用户数据//
     std::vector<float> localA;
     if (data && (uint64_t)len >= mid) {
         localA.assign(data, data + mid);
@@ -216,7 +224,7 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
 
     SOCKET c = get_worker_sock();
     if (c == INVALID_SOCKET) {
-        // Worker ã˻Ϊȫ򣨱֤ȷ
+        // Worker 不可用时，全量单机排序//
         std::vector<float> full;
         if (data && (uint64_t)len >= totalN) full.assign(data, data + totalN);
         else init_local(full, 0, totalN);
@@ -230,10 +238,10 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
     MsgHeader h{ MAGIC, (uint32_t)Op::SORT, (uint64_t)(totalN - mid), mid, totalN };
     if (!send_all(c, &h, sizeof(h))) {
         reset_worker_sock();
-        return sortSpeedUp(data, len, result); // һ fallbackߵ Worker ÷֧
+        return sortSpeedUp(data, len, result); // Fallback 重试连接 Worker
     }
 
-    //  Worker ش bytes
+    // 等待 Worker 返回排序结果的字节数//
     uint64_t bBytes = 0;
     if (!recv_all(c, &bBytes, sizeof(bBytes))) {
         reset_worker_sock();
@@ -251,11 +259,11 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
         return sort(data, len, result);
     }
 
-    // 򣨰 key
+    // 本地乱序一次后按 key 排序，避免与 Worker 排序完全一致//
     shuffle_fisher_yates(localA.data(), (uint64_t)localA.size(), 0x1234ULL);
     if (localA.size() > 1) quicksort_by_key(localA.data(), 0, (int64_t)localA.size() - 1);
 
-    // 鲢 result[] д log(sqrt(.)) 
+    // 归并后直接向 result 写入 log(sqrt(.)) 结果//
     merge_to_transformed(
         localA.data(), (int64_t)localA.size(),
         sortedB.data(), (int64_t)sortedB.size(),
@@ -265,7 +273,8 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
     return 0.0f;
 }
 
-// ====== ѡԼĲ mainʦӿʱԺ ======
+// ====== 从这里开始运行 main ======
+// 获取 QueryPerformanceCounter 的倒频率（ms）//
 static double freqInvMs() {
     static double v = [] {
         LARGE_INTEGER f;
@@ -275,15 +284,16 @@ static double freqInvMs() {
     return v;
 }
 
+// 主流程：单机基线、双机性能和结果校验//
 int main() {
 
     try {
 
         
-		//单机测试 （5次取平均值）
+        // 单机测试（5 次取平均值）//
         const int N = (int)DATANUM;
         std::vector<float> raw;
-        init_local(raw, 0, (uint64_t)N);  // 
+        init_local(raw, 0, (uint64_t)N);  //
 
         auto run5_avg_ms = [&](auto&& fn) {
             double total = 0;
@@ -302,7 +312,7 @@ int main() {
         double t_sum_base = run5_avg_ms([&] { (void)sum(raw.data(), N); });
         double t_max_base = run5_avg_ms([&] { (void)max(raw.data(), N); });
 
-        shuffle_fisher_yates(raw.data(), (uint64_t)raw.size(), 0x20251216ULL); //增加洗牌函数
+        shuffle_fisher_yates(raw.data(), (uint64_t)raw.size(), 0x20251216ULL); // 增加洗牌次数
         double t_sort_base = run5_avg_ms([&] { (void)sort(raw.data(), N, out.data()); });
 
         std::cout << "[BASE][RUN5_AVG][SUM ] avg=" << t_sum_base << " ms\n";
@@ -332,7 +342,7 @@ int main() {
         double t_sum_base = run1_ms([&] { (void)sum(raw.data(), N); });
         double t_max_base = run1_ms([&] { (void)max(raw.data(), N); });
 
-        shuffle_fisher_yates(raw.data(), (uint64_t)raw.size(), 0x20251216ULL); //增加洗牌函数
+        shuffle_fisher_yates(raw.data(), (uint64_t)raw.size(), 0x20251216ULL); // 增加洗牌次数
 
         double t_sort_base = run1_ms([&] { (void)sort(raw.data(), N, out.data()); });
 
@@ -346,7 +356,7 @@ int main() {
         */
 
         /*
-        //一次
+        // 单次双机测试
         double t_sum_dual = 0, t_max_dual = 0, t_sort_dual = 0;
         {
             LARGE_INTEGER st, ed;
@@ -378,18 +388,18 @@ int main() {
 
             int midIndex = N / 2;
 
-            //验证输出
-            // 前5个
+            // 简单校验输出
+            // 前 5 个
             std::cout << "out[0..4]:\n ";
             for (int i = 0; i < 5 && i < N; ++i) std::cout << out[i] << (i == 4 ? '\n' : ' ');
 
-            // 中间5个
+            // 中间 5 个
             std::cout << "out[mid-2..mid+2]:\n ";
             int L = imax(0, midIndex - 2);
             int R = imin(N - 1, midIndex + 2);
             for (int i = L; i <= R; ++i) std::cout << out[i] << (i == R ? '\n' : ' ');
 
-            // 最后5个
+            // 最后 5 个
             std::cout << "out[last-4..last]:\n";
             int start = imax(0, N - 5);
             for (int i = start; i < N; ++i) std::cout << out[i] << (i == N - 1 ? '\n' : ' ');
@@ -403,6 +413,7 @@ int main() {
         std::cout << "\n";
         */
 
+        // 双机测试取平均//
         double t_sum_dual_avg = 0, t_max_dual_avg = 0, t_sort_dual_avg = 0;
 
         // 记录最后一次的结果//
@@ -421,12 +432,12 @@ int main() {
 
         t_sort_dual_avg = run5_avg_ms([&] {
             sortSpeedUp(nullptr, N, out_dual.data());
-            // 读一下结果，确保 out_dual 在 Release 下也不会被“认为没用”//
+            // 访问一次结果，确保 out_dual 在 Release 下不会被认为未使用//
             volatile float guard = out_dual[0];
             (void)guard;
             });
 
-        // 计时结果输出（平均值）
+        // 计时结果输出（均值）//
         std::cout << "[DUAL][RUN5_AVG][SUM ] result=" << sum_ans << " avg=" << t_sum_dual_avg << " ms\n";
         std::cout << "[DUAL][RUN5_AVG][MAX ] result=" << max_ans << " avg=" << t_max_dual_avg << " ms\n";
         std::cout << "[DUAL][RUN5_AVG][SORT] done   avg=" << t_sort_dual_avg << " ms\n";
@@ -434,27 +445,27 @@ int main() {
         double t_total_dual_avg = t_sum_dual_avg + t_max_dual_avg + t_sort_dual_avg;
         std::cout << "[DUAL][RUN5_AVG][TOTAL] avg=" << t_total_dual_avg << " ms\n\n";
 
-        // 只做一次结果抽查打印（别放进 run5 里）
+        // 单次结果抽检打印（不放进 run5 里）//
         std::cout << std::fixed << std::setprecision(10);
         int midIndex = N / 2;
 
-        // 前5个
+        // 前 5 个//
         std::cout << "out[0..4]:\n ";
         for (int i = 0; i < 5 && i < N; ++i) std::cout << out_dual[i] << (i == 4 ? '\n' : ' ');
 
-        // 中间5个
+        // 中间 5 个//
         std::cout << "out[mid-2..mid+2]:\n ";
         int L = imax(0, midIndex - 2);
         int R = imin(N - 1, midIndex + 2);
         for (int i = L; i <= R; ++i) std::cout << out_dual[i] << (i == R ? '\n' : ' ');
 
-        // 最后5个
+        // 最后 5 个//
         std::cout << "out[last-4..last]:\n";
         int start = imax(0, N - 5);
         for (int i = start; i < N; ++i) std::cout << out_dual[i] << (i == N - 1 ? '\n' : ' ');
 
 
-        // ر socketworker ˳㵱ǰ worker.cpp Ϊ
+        // 结束时断开 socket，配合 worker.cpp//
         reset_worker_sock();
 
         return 0;
