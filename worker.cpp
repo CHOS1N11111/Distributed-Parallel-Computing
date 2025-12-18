@@ -6,6 +6,17 @@
 #include <iostream>
 
 #include <exception>
+/**
+ * @file worker.cpp
+ * @brief 从节点 (Worker) 入口程序
+ * * 程序的计算服务中心。主要职责包括：
+ * 1. 作为 TCP 服务端监听指定端口，等待 Master 连接。
+ * 2. 消息循环：接收 Master 发送的操作指令 (MsgHeader)。
+ * 3. 数据生成：根据指令中的范围 (begin, end) 自行生成数据，避免网络传输原始数据。
+ * 4. 任务执行：执行对应的 sum/max/sort 计算。
+ * 5. 结果回传：将计算结果（数值或排序后的数组）发送回 Master。
+ */
+
 
 // 生成 [begin, end) 的递增数据（元素值为 begin+1 起步），便于 master/worker 双端保持一致
 static void init_local(std::vector<float>& data, uint64_t begin, uint64_t end) {

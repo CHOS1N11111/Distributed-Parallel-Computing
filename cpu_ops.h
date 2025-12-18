@@ -1,3 +1,10 @@
+/**
+ * @file cpu_ops.h
+ * @brief 基础计算核心模块
+ * * 该文件提供了针对 float 数据逐个计算 ln(sqrt(x)) 后的基础聚合操作实现。
+ * 包含单机版的求和 (sum) 和求最大值 (max) 函数。
+ * 这些函数是 Master 和 Worker 节点进行本地计算时的底层核心逻辑。
+ */
 #pragma once
 #include <cmath>
 #include <cstdint>

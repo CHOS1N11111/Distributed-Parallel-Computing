@@ -1,4 +1,14 @@
-﻿#pragma once
+﻿/**
+ * @file common.h
+ * @brief 公共定义与工具模块
+ * * 该文件被 Master 和 Worker 共同包含，定义了系统的基础配置和通信协议。
+ * 主要内容：
+ * 1. 数据规模 (DATANUM) 与 线程/分块常数。
+ * 2. 通信协议结构体 (MsgHeader) 与 操作码枚举 (Op)。
+ * 3. 网络配置 (端口号、魔数)。
+ * 4. 通用工具函数：伪随机数生成器 (RNG) 和 Fisher-Yates 洗牌算法，确保两端数据生成一致。
+ */
+#pragma once
 
 #include <cstdint>
 

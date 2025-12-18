@@ -1,4 +1,14 @@
-﻿#pragma once
+﻿/**
+ * @file cpu_sort.h
+ * @brief 排序与归并逻辑模块
+ * * 该文件实现了基于 ln(sqrt(x)) 为比较键（Key）的排序算法。
+ * 主要包含：
+ * 1. key_log_sqrt: 计算比较键。
+ * 2. quicksort_by_key: 对原始数据进行原地快速排序，但依据变换后的 Key 进行比较。
+ * 3. merge_to_transformed: 将两段已排序的原始数据归并，并直接输出变换后的有序序列。
+ * * 用于 Master 的本地排序以及合并 Worker 返回的有序数据。
+ */
+#pragma once
 #include <cmath>
 #include <cstdint>
 

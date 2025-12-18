@@ -19,7 +19,16 @@
 #undef min
 #endif
 #include <cmath>
-
+/**
+ * @file master.cpp
+ * @brief 主节点 (Master) 入口程序
+ * * 程序的控制中心。主要职责包括：
+ * 1. 执行单机基准测试 (Baseline)，记录 sum/max/sort 的耗时。
+ * 2. 作为 TCP 客户端连接 Worker 节点。
+ * 3. 任务分发：将约 70% 的计算任务量通过网络下发给 Worker。
+ * 4. 结果汇总：计算本地任务结果，接收 Worker 结果，并进行聚合（求和、比较最大值、归并排序）。
+ * 5. 性能统计：计算并打印双机协同工作的总耗时与加速效果。
+ */
 
 // 按 3:7 切分任务规模，避免 master 或 worker 分到 0 个元素//
 static inline uint64_t split_mid_30_70(uint64_t totalN) {

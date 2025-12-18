@@ -1,5 +1,12 @@
-﻿// net.cpp
-
+﻿
+/**
+ * @file net.cpp
+ * @brief 网络通信库实现
+ * * 实现了 net.h 中声明的网络接口。
+ * 负责处理 WSAStartup/WSACleanup 的生命周期管理，
+ * 并封装了底层的 socket、bind、listen、connect、send、recv 等系统调用，
+ * 为上层业务逻辑提供简单的阻塞式 TCP 数据传输服务。
+ */
 #pragma comment(lib, "Ws2_32.lib")
 
 #include "net.h"
