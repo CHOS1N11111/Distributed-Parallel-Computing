@@ -1,4 +1,4 @@
-
+#
 cmake_minimum_required(VERSION 3.16)
 
 project(AlgoBigHW LANGUAGES CXX)
@@ -42,7 +42,7 @@ add_executable(worker
 target_link_libraries(worker PRIVATE net Threads::Threads)
 set_target_properties(worker PROPERTIES OUTPUT_NAME "Worker")
 
-option(USE_SSE "Enable SSE/SSE2 intrinsics" ON)
+option(USE_SSE "Enable SSE/SSE2 intrinsics" ON) #TODO： SSE选项，默认开启，如需关闭，请改为 OFF 或在 CMake 命令行使用 -DUSE_SSE=OFF。
 
 if(USE_SSE)
 
@@ -58,7 +58,7 @@ if(USE_SSE)
   endif()
 endif()
 
-option(USE_OPENMP "Enable OpenMP" ON)
+option(USE_OPENMP "Enable OpenMP" ON)  #TODO： OpenMP选项，如需关闭，请改为 OFF 或在 CMake 命令行使用 -DUSE_OPENMP=OFF
 
 if(USE_OPENMP)
   find_package(OpenMP)

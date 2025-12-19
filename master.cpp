@@ -97,7 +97,7 @@ static SOCKET& worker_sock_ref() {
 }
 
 // 修改这里即可替换 worker(B) 的 IP，单机自测可用 127.0.0.1//
-const char* WORKER_IP = "127.0.0.1"; // TODO: worker IP    //192.168.71.1    //192.168.137.5  //本机测试： 127.0.0.1
+const char* WORKER_IP = "127.0.0.1"; // TODO: 需要修改为worker IP    //192.168.71.1    //192.168.137.5  //本机测试时使用： 127.0.0.1
 
 // 取到已连接的 worker socket，必要时建立连接//
 static SOCKET get_worker_sock() {
@@ -123,7 +123,7 @@ float sumSpeedUp(const float data[], const int len) {
     if (len <= 0) return 0.0f;
 
     const uint64_t totalN = (uint64_t)len;
-    const uint64_t mid = totalN / 2; // TODO: 可切换为 split_mid_30_70(totalN)
+    const uint64_t mid = totalN / 2; // TODO: 可切换为 split_mid_30_70(totalN)，worker\master可以调整比例
     //const uint64_t mid = split_mid_30_70(totalN);
 
     // 优先使用用户给的数据//
@@ -155,8 +155,8 @@ float sumSpeedUp(const float data[], const int len) {
 
     // 本地计算前半段
     //float aPart = cpu_sum_log_sqrt(aPtr, aN);//
-    //float aPart = cpu_sum_log_sqrt_sse(aPtr, (uint64_t)aN);//
-    float aPart = cpu_sum_log_sqrt_sse_omp(aPtr, (uint64_t)aN);
+    //float aPart = cpu_sum_log_sqrt_sse(aPtr, (uint64_t)aN);// 
+    float aPart = cpu_sum_log_sqrt_sse_omp(aPtr, (uint64_t)aN);    //TODO：可选择无SSE和OpenMP版本或单独启用SSE
 
 
 
@@ -208,7 +208,7 @@ float maxSpeedUp(const float data[], const int len) {
     // 本地计算前半段//
     //float aMax = cpu_max_log_sqrt(aPtr, aN);//
     //float aMax = cpu_max_log_sqrt_sse(aPtr, (uint64_t)aN);//
-    float aMax = cpu_max_log_sqrt_sse_omp(aPtr, (uint64_t)aN);
+    float aMax = cpu_max_log_sqrt_sse_omp(aPtr, (uint64_t)aN);    //TODO：可选择无SSE和OpenMP版本或单独启用SSE
 
 
 
@@ -240,6 +240,7 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
         init_local(localA, 0, mid);
     }
 
+    //错误处理
     SOCKET c = get_worker_sock();
     if (c == INVALID_SOCKET) {
         // Worker 不可用时，全量单机排序//

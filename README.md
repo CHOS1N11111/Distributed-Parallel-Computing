@@ -15,7 +15,7 @@ Master 负责任务拆分、本地计算、收集 Worker 结果并汇总。
 
 - **操作系统**：Windows
 - **编译器**：支持 C++11 及以上
-- **库依赖**：`Ws2_32.lib`（代码通过 `#pragma comment` 引入，通常无需额外配置）
+- **库依赖**：`Ws2_32.lib`（代码通过 `#pragma comment` 引入，通常无需额外配置）; `OpenMP` (可选，用于多线程加速)
 
 ## 📂 文件结构
 
@@ -24,7 +24,7 @@ Master 负责任务拆分、本地计算、收集 Worker 结果并汇总。
   - `worker.cpp`: 从节点入口，监听端口、接收指令、处理数据并返回结果
 
 - **计算内核**
-  - `cpu_ops.h`: SIMD 友好的求和和求最大值实现
+  - `cpu_ops.h`: 包含 SSE 指令集与 OpenMP 多线程加速的计算实现
   - `cpu_sort.h`: 自定义快速排序与归并排序逻辑，以 `ln(sqrt(x))` 作为比较键
 
 - **网络通信**
@@ -42,6 +42,16 @@ Master 负责任务拆分、本地计算、收集 Worker 结果并汇总。
 
 2. **端口配置（可选）**
    默认端口为 `50001`（定义于 `common.h`）。若端口被占用，可在 `common.h` 中修改 `PORT`。
+
+3. **任务负载均衡 (可选)**
+   位置：`master.cpp` 中的 `split_mid_30_70` 函数调用处
+   默认 Master/Worker 各处理 50% 数据。若 Worker 算力更强，可启用 3:7 分割策略以获得更高加速比。
+
+**如何修改选项：**
+在 CMake 生成阶段使用 `-D` 参数，例如关闭 SSE 和 OpenMP 进行纯标量测试：
+```bash
+cmake -DUSE_SSE=OFF -DUSE_OPENMP=OFF ..
+```
 
 ## 🚀 编译与运行
 
