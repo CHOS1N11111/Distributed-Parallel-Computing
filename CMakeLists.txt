@@ -1,45 +1,74 @@
-cmake_minimum_required(VERSION 3.24)
 
-project(Project LANGUAGES CXX CUDA)
+cmake_minimum_required(VERSION 3.16)
+
+project(AlgoBigHW LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_STANDARD 17)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-
-# 4060 通常 compute capability = 8.9
-set(CMAKE_CUDA_ARCHITECTURES 89)
-
-find_package(CUDAToolkit REQUIRED)
-
-# 公共代码做成一个静态库，System/Worker 都链接它
-add_library(core STATIC
+# ---- library: net ----
+add_library(net STATIC
     net.cpp
-    cuda_ops.cu
+    net.h
 )
+target_include_directories(net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# Windows socket / headers cleanup
+if(WIN32)
+    target_compile_definitions(net PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(net PUBLIC ws2_32)
+endif()
 
-# Winsock + CUDA Runtime
-target_link_libraries(core PUBLIC ws2_32 CUDA::cudart)
+# (Optional but safe) threads for future use
+find_package(Threads REQUIRED)
 
-# Windows 下避免 min/max 宏污染（可选）
-target_compile_definitions(core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
-
-# CUDA 编译属性（可选但推荐）
-set_target_properties(core PROPERTIES
-    CUDA_SEPARABLE_COMPILATION ON
-)
-
-# System (master)
-add_executable(System
+# ---- executables ----
+add_executable(master
     master.cpp
+    common.h
+    cpu_ops.h
+    cpu_sort.h
 )
-target_link_libraries(System PRIVATE core)
+target_link_libraries(master PRIVATE net Threads::Threads)
+set_target_properties(master PROPERTIES OUTPUT_NAME "Master")
 
-# Worker
-add_executable(Worker
+add_executable(worker
     worker.cpp
+    common.h
+    cpu_ops.h
+    cpu_sort.h
 )
-target_link_libraries(Worker PRIVATE core)
+target_link_libraries(worker PRIVATE net Threads::Threads)
+set_target_properties(worker PROPERTIES OUTPUT_NAME "Worker")
+
+option(USE_SSE "Enable SSE/SSE2 intrinsics" ON)
+
+if(USE_SSE)
+
+  target_compile_definitions(master PRIVATE USE_SSE=1)
+  target_compile_definitions(worker PRIVATE USE_SSE=1)
+
+  if(MSVC AND NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    target_compile_options(master PRIVATE /arch:SSE2)
+    target_compile_options(worker PRIVATE /arch:SSE2)
+  elseif(NOT MSVC)
+    target_compile_options(master PRIVATE -msse2)
+    target_compile_options(worker PRIVATE -msse2)
+  endif()
+endif()
+
+option(USE_OPENMP "Enable OpenMP" ON)
+
+if(USE_OPENMP)
+  find_package(OpenMP)
+  if(OpenMP_CXX_FOUND)
+
+    target_link_libraries(master PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(worker PRIVATE OpenMP::OpenMP_CXX)
+    target_compile_definitions(master PRIVATE USE_OPENMP=1)
+    target_compile_definitions(worker PRIVATE USE_OPENMP=1)
+  else()
+    message(WARNING "OpenMP not found; building without OpenMP.")
+  endif()
+endif()

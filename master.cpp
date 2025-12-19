@@ -97,7 +97,7 @@ static SOCKET& worker_sock_ref() {
 }
 
 // 修改这里即可替换 worker(B) 的 IP，单机自测可用 127.0.0.1//
-const char* WORKER_IP = "192.168.137.5"; // TODO: worker IP    //192.168.71.1    //192.168.137.5  //本机测试： 127.0.0.1
+const char* WORKER_IP = "127.0.0.1"; // TODO: worker IP    //192.168.71.1    //192.168.137.5  //本机测试： 127.0.0.1
 
 // 取到已连接的 worker socket，必要时建立连接//
 static SOCKET get_worker_sock() {
@@ -153,9 +153,14 @@ float sumSpeedUp(const float data[], const int len) {
         return sum(aPtr, (int)aN);
     }
 
-    // 本地计算前半段//
-    float aPart = cpu_sum_log_sqrt(aPtr, aN);
+    // 本地计算前半段
+    //float aPart = cpu_sum_log_sqrt(aPtr, aN);//
+    //float aPart = cpu_sum_log_sqrt_sse(aPtr, (uint64_t)aN);//
+    float aPart = cpu_sum_log_sqrt_sse_omp(aPtr, (uint64_t)aN);
 
+
+
+    
     // 等待 Worker 的结果//
     float bPart = 0.0f;
     if (!recv_all(c, &bPart, sizeof(bPart))) {
@@ -201,7 +206,11 @@ float maxSpeedUp(const float data[], const int len) {
     }
 
     // 本地计算前半段//
-    float aMax = cpu_max_log_sqrt(aPtr, aN);
+    //float aMax = cpu_max_log_sqrt(aPtr, aN);//
+    //float aMax = cpu_max_log_sqrt_sse(aPtr, (uint64_t)aN);//
+    float aMax = cpu_max_log_sqrt_sse_omp(aPtr, (uint64_t)aN);
+
+
 
     // 等待 Worker 的结果//
     float bMax = -INFINITY;

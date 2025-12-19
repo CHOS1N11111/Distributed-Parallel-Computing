@@ -82,7 +82,9 @@ int main() {
             if (h.op == (uint32_t)Op::SUM) {
                 std::cout << "[Worker] cpu sum...\n";
                 // 本段数据执行 log(sqrt(x)) 后求和，结果发回 master 进行汇总
-                float part = cpu_sum_log_sqrt(local.data(), (uint64_t)local.size());
+                //float part = cpu_sum_log_sqrt(local.data(), (uint64_t)local.size());//
+                //float part = cpu_sum_log_sqrt_sse(local.data(), (uint64_t)local.size());//
+                float part = cpu_sum_log_sqrt_sse_omp(local.data(), (uint64_t)local.size());
                 std::cout << "[Worker] cpu sum done\n";
                 send_all(c, &part, sizeof(part));
                 std::cout << "[Worker] send sum done\n";
@@ -91,7 +93,9 @@ int main() {
 
                 std::cout << "[Worker] cpu max...\n";
                 // 本段数据执行 log(sqrt(x)) 后取最大，同步给 master
-                float part = cpu_max_log_sqrt(local.data(), (uint64_t)local.size());
+                //float part = cpu_max_log_sqrt(local.data(), (uint64_t)local.size());//
+                //float part = cpu_max_log_sqrt_sse(local.data(), (uint64_t)local.size());//
+                float part = cpu_max_log_sqrt_sse_omp(local.data(), (uint64_t)local.size());
                 std::cout << "[Worker] cpu max done\n";
                 send_all(c, &part, sizeof(part));
                 std::cout << "[Worker] send max done\n";
