@@ -97,7 +97,7 @@ static SOCKET& worker_sock_ref() {
 }
 
 // 修改这里即可替换 worker(B) 的 IP，单机自测可用 127.0.0.1//
-const char* WORKER_IP = "127.0.0.1"; // TODO: 需要修改为worker IP    //192.168.71.1    //192.168.137.5  //本机测试时使用： 127.0.0.1
+const char* WORKER_IP = "192.168.137.5"; // TODO: 需要修改为worker IP    //192.168.71.1    //192.168.137.5  //本机测试时使用： 127.0.0.1
 
 // 取到已连接的 worker socket，必要时建立连接//
 static SOCKET get_worker_sock() {

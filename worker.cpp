@@ -58,7 +58,7 @@ int main() {
                 << " begin=" << h.begin
                 << " end=" << h.end
                 << " len=" << h.len << "\n";
-
+            // 输出用于错误处理
 
             // 基础校验，防止非法请求
             if (h.magic != MAGIC) {
