@@ -21,7 +21,7 @@ static inline float key_log_sqrt(float x) {
 }
 
 // 原地快速排序，按 key_log_sqrt(x) 升序排列 a[l..r]，流程为：
-// 1) 选中间元素为 pivot，并计算其 key。
+// 1) 选中间元素为 pivot，并计算其 key， kp = key_log_sqrt(pivot)。
 // 2) i/j 双指针向中间扫描，找到与 key 关系不满足的元素。
 // 3) 交换 a[i]/a[j] 并推进指针，完成一轮分区。
 // 4) 递归处理左右子区间，直到区间长度为 1。

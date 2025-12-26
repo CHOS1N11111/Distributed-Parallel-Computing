@@ -97,7 +97,7 @@ static SOCKET& worker_sock_ref() {
 }
 
 // 修改这里即可替换 worker(B) 的 IP，单机自测可用 127.0.0.1//
-const char* WORKER_IP = "192.168.137.5"; // TODO: 需要修改为worker IP    //192.168.71.1    //192.168.137.5  //本机测试时使用： 127.0.0.1
+const char* WORKER_IP = "127.0.0.1"; // TODO: 需要修改为worker IP    //192.168.137.1    //192.168.137.5（worker）  //本机测试时使用： 127.0.0.1
 
 // 取到已连接的 worker socket，必要时建立连接//
 static SOCKET get_worker_sock() {
@@ -328,8 +328,18 @@ int main() {
 
         std::vector<float> out((size_t)N);
 
-        double t_sum_base = run5_avg_ms([&] { (void)sum(raw.data(), N); });
-        double t_max_base = run5_avg_ms([&] { (void)max(raw.data(), N); });
+        //double t_sum_base = run5_avg_ms([&] { (void)sum(raw.data(), N); });
+        //double t_max_base = run5_avg_ms([&] { (void)max(raw.data(), N); });
+        // 修改 master.cpp 中的 run5_avg_ms 调用
+        double t_sum_base = run5_avg_ms([&] {
+            volatile float result = sum(raw.data(), N); // 使用 volatile 防止优化
+            (void)result;
+            });
+
+        double t_max_base = run5_avg_ms([&] {
+            volatile float result = max(raw.data(), N);
+            (void)result;
+            });
 
         shuffle_fisher_yates(raw.data(), (uint64_t)raw.size(), 0x20251216ULL); // 增加洗牌次数
         double t_sort_base = run5_avg_ms([&] { (void)sort(raw.data(), N, out.data()); });

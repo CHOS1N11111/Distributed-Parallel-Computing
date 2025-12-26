@@ -27,12 +27,28 @@ static void init_local(std::vector<float>& data, uint64_t begin, uint64_t end) {
     }
 }
 
+static void print_build_features() {
+    std::cout << "[Worker] Build features:";
+#if defined(USE_OPENMP)
+    std::cout << " OpenMP=ON";
+#else
+    std::cout << " OpenMP=OFF";
+#endif
+#if defined(USE_SSE)
+    std::cout << " SSE=ON";
+#else
+    std::cout << " SSE=OFF";
+#endif
+    std::cout << "\n";
+}
+
 int main() {
     try {
         // 初始化 WSA 并启动监听，等待 master 连接
         // worker 只接受一个连接，主循环内串行处理 master 发来的多轮指令
         WsaInit wsa;
         std::cout << "[Worker] BOOT OK\n";
+        print_build_features();
 
         SOCKET ls = tcp_listen(PORT);
         std::cout << "[Worker] Listening on " << PORT << "...\n";
