@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file cpu_ops.h
  * @brief 基础计算核心模块
  * * 该文件提供了针对 float 数据逐个计算 ln(sqrt(x)) 后的基础聚合操作实现。
@@ -9,11 +9,9 @@
 #include <cmath>
 #include <cstdint>
 
-// ===== SSE (SIMD) 支持 =====
-// 用于对 sqrt 做 4 路并行处理（_mm_sqrt_ps）。
-// 说明：标准库 logf 通常是标量实现，因此这里采用“sqrt 向量化 + log 标量”的方式，
-// 以保证结果与标量版本一致，同时满足作业中“使用 SSE”要求。
-//
+// ===== SSE/AVX2 (SIMD) support =====
+// AVX2 processes 8 floats per step, SSE processes 4; logf stays scalar.
+
 #if defined(USE_SSE)
   #if defined(_MSC_VER)
     #include <intrin.h>
@@ -27,39 +25,73 @@
 #endif
 
 // 计算 log(sqrt(x)) 的总和
+// 说明：逐个元素先开方再取对数，并把结果累加到双精度变量中以减少精度损失。
 inline float cpu_sum_log_sqrt(const float* data, uint64_t n) {
     double s = 0.0;
     for (uint64_t i = 0; i < n; ++i) {
+        // 第一步：对当前元素开方
+        // 第二步：对开方结果取对数
+        // 第三步：把该结果累加到总和
         s += logf(sqrtf(data[i]));
     }
+    // 把双精度的累加结果转换为 float 返回
     return (float)s;
 }
 
-// 计算 log(sqrt(x)) 的最大值//
+// 计算 log(sqrt(x)) 的最大值
+// 说明：逐个元素先开方再取对数，与当前最大值比较并更新。
 inline float cpu_max_log_sqrt(const float* data, uint64_t n) {
+    // 初始值设为负无穷，确保第一个元素一定能更新最大值
     float m = -INFINITY;
     for (uint64_t i = 0; i < n; ++i) {
+        // 计算当前元素的 log(sqrt(x))
         float v = logf(sqrtf(data[i]));
+        // 如果当前值更大则更新最大值
         m = (v > m ? v : m);
     }
+    // 返回最终最大值
     return m;
 }
 
-// ===== 单独 SSE 版本（用于 SpeedUp 路径） =====
-// sqrt 使用 SSE 4 路并行，logf 仍为标量（保证与标量版一致）。
-//
+// ===== SSE/AVX2 version (for SpeedUp path) =====
+// 说明：sqrt 使用 SIMD（AVX2 每次 8 个元素或 SSE 每次 4 个元素）并行计算，
+// logf 仍保持标量逐个计算，以保证与基线版本的数值一致性。
 inline float cpu_sum_log_sqrt_sse(const float* data, uint64_t n) {
-#if defined(USE_SSE)
+#if defined(USE_SSE) && defined(USE_AVX2)
+    double s = 0.0;
+    uint64_t i = 0;
+    alignas(32) float buf[8];
+
+    for (; i + 8 <= n; i += 8) {
+        // 从内存加载 8 个 float 到 AVX 寄存器
+        __m256 x = _mm256_loadu_ps(data + i);
+        // 对 8 个元素并行开方
+        __m256 r = _mm256_sqrt_ps(x);
+        // 将结果存回对齐缓冲区，便于标量 logf 处理
+        _mm256_store_ps(buf, r);
+        // 逐个计算 logf 并累加
+        s += logf(buf[0]) + logf(buf[1]) + logf(buf[2]) + logf(buf[3]) +
+             logf(buf[4]) + logf(buf[5]) + logf(buf[6]) + logf(buf[7]);
+    }
+    // 处理剩余不足 8 个的尾部元素
+    for (; i < n; ++i) s += logf(sqrtf(data[i]));
+    return (float)s;
+#elif defined(USE_SSE)
     double s = 0.0;
     uint64_t i = 0;
     alignas(16) float buf[4];
 
     for (; i + 4 <= n; i += 4) {
+        // 从内存加载 4 个 float 到 SSE 寄存器
         __m128 x = _mm_loadu_ps(data + i);
+        // 对 4 个元素并行开方
         __m128 r = _mm_sqrt_ps(x);
+        // 将结果存回对齐缓冲区，便于标量 logf 处理
         _mm_store_ps(buf, r);
+        // 逐个计算 logf 并累加
         s += logf(buf[0]) + logf(buf[1]) + logf(buf[2]) + logf(buf[3]);
     }
+    // 处理剩余不足 4 个的尾部元素
     for (; i < n; ++i) s += logf(sqrtf(data[i]));
     return (float)s;
 #else
@@ -68,20 +100,49 @@ inline float cpu_sum_log_sqrt_sse(const float* data, uint64_t n) {
 }
 
 inline float cpu_max_log_sqrt_sse(const float* data, uint64_t n) {
-#if defined(USE_SSE)
+#if defined(USE_SSE) && defined(USE_AVX2)
+    float m = -INFINITY;
+    uint64_t i = 0;
+    alignas(32) float buf[8];
+
+    for (; i + 8 <= n; i += 8) {
+        // 从内存加载 8 个 float 到 AVX 寄存器
+        __m256 x = _mm256_loadu_ps(data + i);
+        // 对 8 个元素并行开方
+        __m256 r = _mm256_sqrt_ps(x);
+        // 将结果存回对齐缓冲区，便于标量 logf 处理
+        _mm256_store_ps(buf, r);
+        for (int k = 0; k < 8; ++k) {
+            // 逐个计算 logf，并更新局部最大值
+            float v = logf(buf[k]);
+            m = (v > m ? v : m);
+        }
+    }
+    // 处理剩余不足 8 个的尾部元素
+    for (; i < n; ++i) {
+        float v = logf(sqrtf(data[i]));
+        m = (v > m ? v : m);
+    }
+    return m;
+#elif defined(USE_SSE)
     float m = -INFINITY;
     uint64_t i = 0;
     alignas(16) float buf[4];
 
     for (; i + 4 <= n; i += 4) {
+        // 从内存加载 4 个 float 到 SSE 寄存器
         __m128 x = _mm_loadu_ps(data + i);
+        // 对 4 个元素并行开方
         __m128 r = _mm_sqrt_ps(x);
+        // 将结果存回对齐缓冲区，便于标量 logf 处理
         _mm_store_ps(buf, r);
         for (int k = 0; k < 4; ++k) {
+            // 逐个计算 logf，并更新局部最大值
             float v = logf(buf[k]);
             m = (v > m ? v : m);
         }
     }
+    // 处理剩余不足 4 个的尾部元素
     for (; i < n; ++i) {
         float v = logf(sqrtf(data[i]));
         m = (v > m ? v : m);
@@ -92,53 +153,68 @@ inline float cpu_max_log_sqrt_sse(const float* data, uint64_t n) {
 #endif
 }
 
-// -------------------- 组合版：OpenMP + SSE（同一个函数里同时用） --------------------
-// 设计：
-// - OpenMP：外层并行拆分数据块到多个线程
-// - SSE：每个线程内部对 sqrt 做 4 路并行（_mm_sqrt_ps）
-// - logf：仍是标量（保证与 baseline 结果一致）
-// - 尾巴（n不是4倍数）串行补算一次
+// -------------------- OpenMP + SIMD (same function uses both) --------------------
+// 设计说明：
+// - OpenMP：把外层循环按块分配给多个线程并行执行。
+// - SIMD：每个线程内部用 AVX2/SSE 对元素并行开方。
+// - logf：仍使用标量逐个计算，保证与基线结果一致。
+// - 尾部处理：当 n 不是 8/4 的整数倍时，剩余元素使用标量串行处理。
 
 inline float cpu_sum_log_sqrt_sse_omp(const float* data, uint64_t n) {
 #if defined(USE_OPENMP)
-    // OpenMP 是“多线程并行”的工具：把大循环拆给多个线程同时做，让 CPU 多核一起工作。
-    // sum 不能被多个线程同时写，因此要用 reduction 让每个线程先算自己的小和，最后再统一合并。
     double sum = 0.0;
 
-#if defined(USE_SSE)
-    const uint64_t n4 = (n / 4) * 4;
+#if defined(USE_SSE) && defined(USE_AVX2)
+    const uint64_t n8 = (n / 8) * 8;
+#pragma omp parallel for reduction(+:sum) schedule(static)
+    for (long long i = 0; i < (long long)n8; i += 8) {
+        // 并行线程内：加载 8 个元素并行开方
+        __m256 x = _mm256_loadu_ps(data + i);
+        __m256 r = _mm256_sqrt_ps(x);
 
-    // OpenMP：把 [0, n4) 这段循环平均分给多个线程做，相当于“多人分工”。
-    // schedule(static) 表示每个线程拿到固定的一段任务，开销小且稳定。
+        alignas(32) float buf[8];
+        // 将开方结果写回缓冲，便于标量 logf
+        _mm256_store_ps(buf, r);
+
+        // 每个线程累加本地的 logf 结果，OpenMP 负责归约到 sum
+        sum += logf(buf[0]) + logf(buf[1]) + logf(buf[2]) + logf(buf[3]) +
+               logf(buf[4]) + logf(buf[5]) + logf(buf[6]) + logf(buf[7]);
+    }
+
+    // 处理尾部元素（不足 8 个的部分）
+    for (uint64_t i = n8; i < n; ++i) sum += logf(sqrtf(data[i]));
+    return (float)sum;
+
+#elif defined(USE_SSE)
+    const uint64_t n4 = (n / 4) * 4;
 #pragma omp parallel for reduction(+:sum) schedule(static)
     for (long long i = 0; i < (long long)n4; i += 4) {
-        // 这里的并行分两层：OpenMP 负责“多线程分工”，SSE 负责“每个线程里一次算 4 个数”，两者互不冲突。
+        // 并行线程内：加载 4 个元素并行开方
         __m128 x = _mm_loadu_ps(data + i);
         __m128 r = _mm_sqrt_ps(x);
 
         alignas(16) float buf[4];
+        // 将开方结果写回缓冲，便于标量 logf
         _mm_store_ps(buf, r);
 
+        // 每个线程累加本地的 logf 结果，OpenMP 负责归约到 sum
         sum += logf(buf[0]) + logf(buf[1]) + logf(buf[2]) + logf(buf[3]);
     }
 
-    // n 不是 4 的倍数时，尾部剩下的元素不进并行区，串行补算一次，避免被多个线程重复处理。
-
-    // 尾巴补算（只算一次，避免并发重复）
+    // 处理尾部元素（不足 4 个的部分）
     for (uint64_t i = n4; i < n; ++i) sum += logf(sqrtf(data[i]));
     return (float)sum;
 
 #else
-    // 没有 SSE 时，用 OpenMP 直接把整个循环并行化，reduction 仍然负责把各线程结果安全相加。
 #pragma omp parallel for reduction(+:sum) schedule(static)
     for (long long i = 0; i < (long long)n; ++i) {
+        // 没有 SIMD 时，直接标量计算并由 OpenMP 归约
         sum += logf(sqrtf(data[i]));
     }
     return (float)sum;
 #endif
 
 #else
-    // 没开 OpenMP：退化为 SSE-only 或 baseline
 #if defined(USE_SSE)
     return cpu_sum_log_sqrt_sse(data, n);
 #else
@@ -149,43 +225,80 @@ inline float cpu_sum_log_sqrt_sse_omp(const float* data, uint64_t n) {
 
 inline float cpu_max_log_sqrt_sse_omp(const float* data, uint64_t n) {
 #if defined(USE_OPENMP)
-    // OpenMP 让多个线程同时计算最大值。因为“最大值”不是简单相加，不能直接用 reduction(max)
-    //（不同编译器支持情况不一），所以用“每线程局部最大值 + 临界区合并”的方式。
     float global_max = -INFINITY;
 
-#if defined(USE_SSE)
-    const uint64_t n4 = (n / 4) * 4;
+#if defined(USE_SSE) && defined(USE_AVX2)
+    const uint64_t n8 = (n / 8) * 8;
 
 #pragma omp parallel
     {
-        // OpenMP：每个线程先维护自己的 local_max，避免多个线程同时改 global_max 造成竞态。
+        // 每个线程维护自己的局部最大值，避免频繁竞争
         float local_max = -INFINITY;
 
-        // OpenMP：把循环块分给线程；nowait 表示这段循环结束后不用等待其它线程，直接进入后面的合并步骤。
 #pragma omp for schedule(static) nowait
-        for (long long i = 0; i < (long long)n4; i += 4) {
-            __m128 x = _mm_loadu_ps(data + i);
-            __m128 r = _mm_sqrt_ps(x);
+        for (long long i = 0; i < (long long)n8; i += 8) {
+            // 并行线程内：加载 8 个元素并行开方
+            __m256 x = _mm256_loadu_ps(data + i);
+            __m256 r = _mm256_sqrt_ps(x);
 
-            alignas(16) float buf[4];
-            _mm_store_ps(buf, r);
+            alignas(32) float buf[8];
+            // 将开方结果写回缓冲，便于标量 logf
+            _mm256_store_ps(buf, r);
 
-            // logf 标量，更新 local_max
-            for (int k = 0; k < 4; ++k) {
+            for (int k = 0; k < 8; ++k) {
+                // 逐个计算 logf，并更新线程内最大值
                 float v = logf(buf[k]);
                 local_max = (v > local_max ? v : local_max);
             }
         }
 
-        // OpenMP：用 critical 把“每个线程的最大值”安全地合并到全局最大值（一次只允许一个线程进入）。
 #pragma omp critical
         {
+            // 合并线程内最大值到全局最大值
             global_max = (local_max > global_max ? local_max : global_max);
         }
     }
 
-    // 尾巴补算（只算一次）
-    // 并行区结束后再串行补尾巴，保证每个元素只算一次。
+    // 处理尾部元素（不足 8 个的部分），直接更新全局最大值
+    for (uint64_t i = n8; i < n; ++i) {
+        float v = logf(sqrtf(data[i]));
+        global_max = (v > global_max ? v : global_max);
+    }
+    return global_max;
+
+#elif defined(USE_SSE)
+    const uint64_t n4 = (n / 4) * 4;
+
+#pragma omp parallel
+    {
+        // 每个线程维护自己的局部最大值，避免频繁竞争
+        float local_max = -INFINITY;
+
+#pragma omp for schedule(static) nowait
+        for (long long i = 0; i < (long long)n4; i += 4) {
+            // 并行线程内：加载 4 个元素并行开方
+            __m128 x = _mm_loadu_ps(data + i);
+            __m128 r = _mm_sqrt_ps(x);
+
+            alignas(16) float buf[4];
+            // 将开方结果写回缓冲，便于标量 logf
+            _mm_store_ps(buf, r);
+
+            for (int k = 0; k < 4; ++k) {
+                // 逐个计算 logf，并更新线程内最大值
+                float v = logf(buf[k]);
+                local_max = (v > local_max ? v : local_max);
+            }
+        }
+
+#pragma omp critical
+        {
+            // 合并线程内最大值到全局最大值
+            global_max = (local_max > global_max ? local_max : global_max);
+        }
+    }
+
+    // 处理尾部元素（不足 4 个的部分），直接更新全局最大值
     for (uint64_t i = n4; i < n; ++i) {
         float v = logf(sqrtf(data[i]));
         global_max = (v > global_max ? v : global_max);
@@ -195,19 +308,19 @@ inline float cpu_max_log_sqrt_sse_omp(const float* data, uint64_t n) {
 #else
 #pragma omp parallel
     {
-        // OpenMP：每个线程算自己的 local_max，最后在 critical 区域合并，避免写冲突。
+        // 每个线程维护自己的局部最大值，避免频繁竞争
         float local_max = -INFINITY;
 
-        // OpenMP：分配循环块给线程，nowait 让线程不用在这里等其它线程。
 #pragma omp for schedule(static) nowait
         for (long long i = 0; i < (long long)n; ++i) {
+            // 直接标量计算并更新线程内最大值
             float v = logf(sqrtf(data[i]));
             local_max = (v > local_max ? v : local_max);
         }
 
-        // OpenMP：critical 区域负责合并每个线程的结果，避免并发写冲突。
 #pragma omp critical
         {
+            // 合并线程内最大值到全局最大值
             global_max = (local_max > global_max ? local_max : global_max);
         }
     }
@@ -215,7 +328,6 @@ inline float cpu_max_log_sqrt_sse_omp(const float* data, uint64_t n) {
 #endif
 
 #else
-    // 没开 OpenMP：退化为 SSE-only 或 baseline
 #if defined(USE_SSE)
     return cpu_max_log_sqrt_sse(data, n);
 #else

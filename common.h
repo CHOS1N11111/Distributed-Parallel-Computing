@@ -43,7 +43,20 @@ struct MsgHeader {
     uint64_t begin;     // 负责的全局起始下标（含）
     uint64_t end;       // 负责的全局结束下标（不含）
 };
+
+// worker -> master 标量结果（sum/max）
+struct WorkerScalarResult {
+    float value;
+    double compute_ms;  // worker 侧计算耗时（不含网络）
+};
+
+// worker -> master 排序结果头
+struct WorkerSortHeader {
+    uint64_t bytes;     // 随后发送的 float 字节数
+    double compute_ms;  // worker 侧计算耗时（不含网络）
+};
 #pragma pack(pop)
+//用于展示网络传输损耗的时间
 
 static constexpr uint32_t MAGIC = 0x54435044; // 'DPCT'
 
@@ -67,4 +80,3 @@ static inline void shuffle_fisher_yates(float* a, uint64_t n, uint64_t seed = 0x
         float t = a[i]; a[i] = a[j]; a[j] = t;
     }
 }
-

@@ -58,6 +58,20 @@ if(USE_SSE)
   endif()
 endif()
 
+option(USE_AVX2 "Enable AVX2 intrinsics" ON)
+if(USE_AVX2)
+  target_compile_definitions(master PRIVATE USE_AVX2=1)
+  target_compile_definitions(worker PRIVATE USE_AVX2=1)
+
+  if(MSVC)
+    target_compile_options(master PRIVATE /arch:AVX2)
+    target_compile_options(worker PRIVATE /arch:AVX2)
+  elseif(NOT MSVC)
+    target_compile_options(master PRIVATE -mavx2)
+    target_compile_options(worker PRIVATE -mavx2)
+  endif()
+endif()
+
 option(USE_OPENMP "Enable OpenMP" ON)  #TODO： OpenMP选项，如需关闭，请改为 OFF 或在 CMake 命令行使用 -DUSE_OPENMP=OFF
 
 if(USE_OPENMP)

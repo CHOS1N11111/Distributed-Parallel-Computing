@@ -6,6 +6,10 @@
 #include <iostream>
 
 #include <exception>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 /**
  * @file worker.cpp
  * @brief 从节点 (Worker) 入口程序
@@ -40,6 +44,16 @@ static void print_build_features() {
     std::cout << " SSE=OFF";
 #endif
     std::cout << "\n";
+}
+
+// 获取 QueryPerformanceCounter 的倒频率（ms）
+static double freqInvMs() {
+    static double v = [] {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        return 1000.0 / (double)f.QuadPart;
+        }();
+    return v;
 }
 
 int main() {
@@ -93,6 +107,8 @@ int main() {
             // 按 master 下发的范围生成数据，所有数据均由 worker 自行生成，不依赖网络传输数据块
             std::vector<float> local;
             std::cout << "[Worker] init_local...\n";
+            LARGE_INTEGER st, ed;
+            QueryPerformanceCounter(&st);
             init_local(local, h.begin, h.end);
             std::cout << "[Worker] init_local done, n=" << local.size() << "\n";
             if (h.op == (uint32_t)Op::SUM) {
@@ -101,8 +117,11 @@ int main() {
                 //float part = cpu_sum_log_sqrt(local.data(), (uint64_t)local.size());//
                 //float part = cpu_sum_log_sqrt_sse(local.data(), (uint64_t)local.size());//  
                 float part = cpu_sum_log_sqrt_sse_omp(local.data(), (uint64_t)local.size()); //TODO：可选择无SSE和OpenMP版本或单独启用SSE
+                QueryPerformanceCounter(&ed);
+                double compute_ms = (ed.QuadPart - st.QuadPart) * freqInvMs();
                 std::cout << "[Worker] cpu sum done\n";
-                send_all(c, &part, sizeof(part));
+                WorkerScalarResult out{ part, compute_ms };
+                send_all(c, &out, sizeof(out));
                 std::cout << "[Worker] send sum done\n";
             }
             else if (h.op == (uint32_t)Op::MAX) {
@@ -112,8 +131,11 @@ int main() {
                 //float part = cpu_max_log_sqrt(local.data(), (uint64_t)local.size());//
                 //float part = cpu_max_log_sqrt_sse(local.data(), (uint64_t)local.size());//
                 float part = cpu_max_log_sqrt_sse_omp(local.data(), (uint64_t)local.size());   //TODO：可选择无SSE和OpenMP版本或单独启用SSE
+                QueryPerformanceCounter(&ed);
+                double compute_ms = (ed.QuadPart - st.QuadPart) * freqInvMs();
                 std::cout << "[Worker] cpu max done\n";
-                send_all(c, &part, sizeof(part));
+                WorkerScalarResult out{ part, compute_ms };
+                send_all(c, &out, sizeof(out));
                 std::cout << "[Worker] send max done\n";
             }
             else if (h.op == (uint32_t)Op::SORT) {
@@ -121,6 +143,8 @@ int main() {
                 shuffle_fisher_yates(local.data(), (uint64_t)local.size(),
                     0xBADC0FFEEULL ^ h.begin); // 使用 begin 参与 seed，保证段间差异
                 quicksort_by_key(local.data(), 0, (int64_t)local.size() - 1);
+                QueryPerformanceCounter(&ed);
+                double compute_ms = (ed.QuadPart - st.QuadPart) * freqInvMs();
                 std::cout << "[Worker] local[0]=" << local.front()
                     << " key=" << key_log_sqrt(local.front()) << "\n";
                 std::cout << "[Worker] local[last]=" << local.back()
@@ -128,7 +152,8 @@ int main() {
 
                 std::cout << "[Worker] sort done\n";
                 uint64_t bytes = (uint64_t)local.size() * sizeof(float);
-                send_all(c, &bytes, sizeof(bytes));
+                WorkerSortHeader wh{ bytes, compute_ms };
+                send_all(c, &wh, sizeof(wh));
                 send_all(c, local.data(), (size_t)bytes);
                 std::cout << "[Worker] send sort done\n";
             }

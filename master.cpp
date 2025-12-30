@@ -1,4 +1,4 @@
-#include "common.h"
+﻿#include "common.h"
 #include "net.h"
 #include "cpu_ops.h"
 #include "cpu_sort.h"
@@ -29,6 +29,25 @@
  * 4. 结果汇总：计算本地任务结果，接收 Worker 结果，并进行聚合（求和、比较最大值、归并排序）。
  * 5. 性能统计：计算并打印双机协同工作的总耗时与加速效果。
  */
+
+/*
+NDEBUG
+_CONSOLE
+USE_SSE = 1
+USE_OPENMP = 1
+USE_AVX2 = 1
+
+*/
+// 提前声明，供 SpeedUp 计算使用
+static double freqInvMs();
+
+struct SpeedStats {
+    double local_ms = 0.0;
+    double worker_ms = 0.0;
+    double merge_ms = 0.0;
+};
+
+static SpeedStats g_last_stats;
 
 // 按 3:7 切分任务规模，避免 master 或 worker 分到 0 个元素//
 static inline uint64_t split_mid_30_70(uint64_t totalN) {
@@ -97,7 +116,7 @@ static SOCKET& worker_sock_ref() {
 }
 
 // 修改这里即可替换 worker(B) 的 IP，单机自测可用 127.0.0.1//
-const char* WORKER_IP = "127.0.0.1"; // TODO: 需要修改为worker IP    //192.168.137.1    //192.168.137.5（worker）  //本机测试时使用： 127.0.0.1
+const char* WORKER_IP = "192.168.137.1"; // TODO: 需要修改为worker IP    //192.168.137.1    //192.168.137.5（worker）  //本机测试时使用： 127.0.0.1
 
 // 取到已连接的 worker socket，必要时建立连接//
 static SOCKET get_worker_sock() {
@@ -120,6 +139,7 @@ static void reset_worker_sock() {
 // 双机版 sum：master 计算前半段，worker 计算后半段再求和//
 float sumSpeedUp(const float data[], const int len) {
     ensure_wsa_inited();
+    g_last_stats = SpeedStats{};
     if (len <= 0) return 0.0f;
 
     const uint64_t totalN = (uint64_t)len;
@@ -135,7 +155,11 @@ float sumSpeedUp(const float data[], const int len) {
         aPtr = data; // 直接用 data[0..mid)
     }
     else {
+        LARGE_INTEGER st, ed;
+        QueryPerformanceCounter(&st);
         init_local(localA, 0, mid);
+        QueryPerformanceCounter(&ed);
+        g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
         aPtr = localA.data();
         aN = (int64_t)localA.size();
     }
@@ -143,37 +167,53 @@ float sumSpeedUp(const float data[], const int len) {
     SOCKET c = get_worker_sock();
     if (c == INVALID_SOCKET) {
         // Worker 不可用则退化为单机
-        return sum(aPtr, (int)aN);
+        LARGE_INTEGER st, ed;
+        QueryPerformanceCounter(&st);
+        float v = sum(aPtr, (int)aN);
+        QueryPerformanceCounter(&ed);
+        g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
+        return v;
     }
 
     // 通知 Worker 处理 [mid, totalN)
     MsgHeader h{ MAGIC, (uint32_t)Op::SUM, (uint64_t)(totalN - mid), mid, totalN };
     if (!send_all(c, &h, sizeof(h))) {
         reset_worker_sock();
-        return sum(aPtr, (int)aN);
+        LARGE_INTEGER st, ed;
+        QueryPerformanceCounter(&st);
+        float v = sum(aPtr, (int)aN);
+        QueryPerformanceCounter(&ed);
+        g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
+        return v;
     }
 
     // 本地计算前半段
+    LARGE_INTEGER st, ed;
+    QueryPerformanceCounter(&st);
     //float aPart = cpu_sum_log_sqrt(aPtr, aN);//
     //float aPart = cpu_sum_log_sqrt_sse(aPtr, (uint64_t)aN);// 
     float aPart = cpu_sum_log_sqrt_sse_omp(aPtr, (uint64_t)aN);    //TODO：可选择无SSE和OpenMP版本或单独启用SSE
+    QueryPerformanceCounter(&ed);
+    g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
 
 
 
     
     // 等待 Worker 的结果//
-    float bPart = 0.0f;
-    if (!recv_all(c, &bPart, sizeof(bPart))) {
+    WorkerScalarResult wres{};
+    if (!recv_all(c, &wres, sizeof(wres))) {
         reset_worker_sock();
         return aPart;
     }
+    g_last_stats.worker_ms = wres.compute_ms;
 
-    return aPart + bPart;
+    return aPart + wres.value;
 }
 
 // 双机版 max：master/worker 各算一半，最后取较大值//
 float maxSpeedUp(const float data[], const int len) {
     ensure_wsa_inited();
+    g_last_stats = SpeedStats{};
     if (len <= 0) return -INFINITY;
 
     const uint64_t totalN = (uint64_t)len;
@@ -188,43 +228,63 @@ float maxSpeedUp(const float data[], const int len) {
         aPtr = data; // data[0..mid)
     }
     else {
+        LARGE_INTEGER st, ed;
+        QueryPerformanceCounter(&st);
         init_local(localA, 0, mid);
+        QueryPerformanceCounter(&ed);
+        g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
         aPtr = localA.data();
         aN = (int64_t)localA.size();
     }
 
     SOCKET c = get_worker_sock();
     if (c == INVALID_SOCKET) {
-        return max_function(aPtr, (int)aN);
+        LARGE_INTEGER st, ed;
+        QueryPerformanceCounter(&st);
+        float v = max_function(aPtr, (int)aN);
+        QueryPerformanceCounter(&ed);
+        g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
+        return v;
     }
     //
     // 通知 Worker 处理 [mid, totalN)//
     MsgHeader h{ MAGIC, (uint32_t)Op::MAX, (uint64_t)(totalN - mid), mid, totalN };
     if (!send_all(c, &h, sizeof(h))) {
         reset_worker_sock();
-        return max_function(aPtr, (int)aN);
+        LARGE_INTEGER st, ed;
+        QueryPerformanceCounter(&st);
+        float v = max_function(aPtr, (int)aN);
+        QueryPerformanceCounter(&ed);
+        g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
+        return v;
     }
 
     // 本地计算前半段//
+    LARGE_INTEGER st, ed;
+    QueryPerformanceCounter(&st);
     //float aMax = cpu_max_log_sqrt(aPtr, aN);//
     //float aMax = cpu_max_log_sqrt_sse(aPtr, (uint64_t)aN);//
     float aMax = cpu_max_log_sqrt_sse_omp(aPtr, (uint64_t)aN);    //TODO：可选择无SSE和OpenMP版本或单独启用SSE
+    QueryPerformanceCounter(&ed);
+    g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
 
 
 
     // 等待 Worker 的结果//
-    float bMax = -INFINITY;
-    if (!recv_all(c, &bMax, sizeof(bMax))) {
+    WorkerScalarResult wres{};
+    if (!recv_all(c, &wres, sizeof(wres))) {
         reset_worker_sock();
         return aMax;
     }
+    g_last_stats.worker_ms = wres.compute_ms;
 
-    return (aMax > bMax ? aMax : bMax);
+    return (aMax > wres.value ? aMax : wres.value);
 }
 
 // 双机版 sort：两端各自排序后再归并，result 写入 log(sqrt(.))//
 float sortSpeedUp(const float data[], const int len, float result[]) {
     ensure_wsa_inited();
+    g_last_stats = SpeedStats{};
     if (len <= 0 || !result) return 0.0f;
 
     const uint64_t totalN = (uint64_t)len;
@@ -234,22 +294,44 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
     // 尽可能直接复用用户数据//
     std::vector<float> localA;
     if (data && (uint64_t)len >= mid) {
+        LARGE_INTEGER st, ed;
+        QueryPerformanceCounter(&st);
         localA.assign(data, data + mid);
+        QueryPerformanceCounter(&ed);
+        g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
     }
     else {
+        LARGE_INTEGER st, ed;
+        QueryPerformanceCounter(&st);
         init_local(localA, 0, mid);
+        QueryPerformanceCounter(&ed);
+        g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
     }
 
     //错误处理
     SOCKET c = get_worker_sock();
     if (c == INVALID_SOCKET) {
         // Worker 不可用时，全量单机排序//
+        LARGE_INTEGER st, ed;
         std::vector<float> full;
-        if (data && (uint64_t)len >= totalN) full.assign(data, data + totalN);
-        else init_local(full, 0, totalN);
+        if (data && (uint64_t)len >= totalN) {
+            QueryPerformanceCounter(&st);
+            full.assign(data, data + totalN);
+            QueryPerformanceCounter(&ed);
+            g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
+        }
+        else {
+            QueryPerformanceCounter(&st);
+            init_local(full, 0, totalN);
+            QueryPerformanceCounter(&ed);
+            g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
+        }
 
+        QueryPerformanceCounter(&st);
         if (full.size() > 1) quicksort_by_key(full.data(), 0, (int64_t)full.size() - 1);
         for (int i = 0; i < len; ++i) result[i] = key_log_sqrt(full[(size_t)i]);
+        QueryPerformanceCounter(&ed);
+        g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
         return 0.0f;
     }
     
@@ -261,11 +343,13 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
     }
 
     // 等待 Worker 返回排序结果的字节数//
-    uint64_t bBytes = 0;
-    if (!recv_all(c, &bBytes, sizeof(bBytes))) {
+    WorkerSortHeader wh{};
+    if (!recv_all(c, &wh, sizeof(wh))) {
         reset_worker_sock();
         return sort(data, len, result);
     }
+    g_last_stats.worker_ms = wh.compute_ms;
+    uint64_t bBytes = wh.bytes;
     if (bBytes % sizeof(float) != 0) {
         reset_worker_sock();
         return sort(data, len, result);
@@ -279,15 +363,22 @@ float sortSpeedUp(const float data[], const int len, float result[]) {
     }
 
     // 本地乱序一次后按 key 排序，避免与 Worker 排序完全一致//
+    LARGE_INTEGER st, ed;
+    QueryPerformanceCounter(&st);
     shuffle_fisher_yates(localA.data(), (uint64_t)localA.size(), 0x1234ULL);
     if (localA.size() > 1) quicksort_by_key(localA.data(), 0, (int64_t)localA.size() - 1);
+    QueryPerformanceCounter(&ed);
+    g_last_stats.local_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
 
     // 归并后直接向 result 写入 log(sqrt(.)) 结果//
+    QueryPerformanceCounter(&st);
     merge_to_transformed(
         localA.data(), (int64_t)localA.size(),
         sortedB.data(), (int64_t)sortedB.size(),
         result
     );
+    QueryPerformanceCounter(&ed);
+    g_last_stats.merge_ms += (ed.QuadPart - st.QuadPart) * freqInvMs();
 
     return 0.0f;
 }
@@ -323,6 +414,25 @@ int main() {
                 QueryPerformanceCounter(&ed);
                 total += (ed.QuadPart - st.QuadPart) * freqInvMs();
             }
+            return total / 5.0;
+            };
+
+        auto run5_avg_ms_stats = [&](auto&& fn, SpeedStats& out_avg) {
+            double total = 0;
+            SpeedStats acc;
+            for (int t = 0; t < 5; ++t) {
+                LARGE_INTEGER st, ed;
+                QueryPerformanceCounter(&st);
+                fn();
+                QueryPerformanceCounter(&ed);
+                total += (ed.QuadPart - st.QuadPart) * freqInvMs();
+                acc.local_ms += g_last_stats.local_ms;
+                acc.worker_ms += g_last_stats.worker_ms;
+                acc.merge_ms += g_last_stats.merge_ms;
+            }
+            out_avg.local_ms = acc.local_ms / 5.0;
+            out_avg.worker_ms = acc.worker_ms / 5.0;
+            out_avg.merge_ms = acc.merge_ms / 5.0;
             return total / 5.0;
             };
 
@@ -451,28 +561,49 @@ int main() {
 
         std::vector<float> out_dual((size_t)N);
 
-        t_sum_dual_avg = run5_avg_ms([&] {
+        SpeedStats sum_stats, max_stats, sort_stats;
+
+        t_sum_dual_avg = run5_avg_ms_stats([&] {
             sum_ans = sumSpeedUp(nullptr, N);
-            });
+            }, sum_stats);
 
-        t_max_dual_avg = run5_avg_ms([&] {
+        t_max_dual_avg = run5_avg_ms_stats([&] {
             max_ans = maxSpeedUp(nullptr, N);
-            });
+            }, max_stats);
 
-        t_sort_dual_avg = run5_avg_ms([&] {
+        t_sort_dual_avg = run5_avg_ms_stats([&] {
             sortSpeedUp(nullptr, N, out_dual.data());
             // 访问一次结果，确保 out_dual 在 Release 下不会被认为未使用//
             volatile float guard = out_dual[0];
             (void)guard;
-            });
+            }, sort_stats);
 
         // 计时结果输出（均值）//
-        std::cout << "[DUAL][RUN5_AVG][SUM ] result=" << sum_ans << " avg=" << t_sum_dual_avg << " ms\n";
-        std::cout << "[DUAL][RUN5_AVG][MAX ] result=" << max_ans << " avg=" << t_max_dual_avg << " ms\n";
-        std::cout << "[DUAL][RUN5_AVG][SORT] done   avg=" << t_sort_dual_avg << " ms\n";
+        double sum_compute_no_net = (sum_stats.local_ms > sum_stats.worker_ms ? sum_stats.local_ms : sum_stats.worker_ms);
+        double max_compute_no_net = (max_stats.local_ms > max_stats.worker_ms ? max_stats.local_ms : max_stats.worker_ms);
+        double sort_compute_no_net = sort_stats.local_ms + sort_stats.worker_ms + sort_stats.merge_ms;
+        double total_no_net = sum_compute_no_net + max_compute_no_net + sort_compute_no_net;
+
+        double sum_comm = t_sum_dual_avg - sum_compute_no_net;
+        double max_comm = t_max_dual_avg - max_compute_no_net;
+        double sort_comm = t_sort_dual_avg - sort_compute_no_net;
+        if (sum_comm < 0) sum_comm = 0;
+        if (max_comm < 0) max_comm = 0;
+        if (sort_comm < 0) sort_comm = 0;
+
+        std::cout << "[DUAL][RUN5_AVG][SUM ] result=" << sum_ans
+            << " avg=" << t_sum_dual_avg << " ms"
+            << "\n (no_net=" << sum_compute_no_net << " ms, comm=" << sum_comm << " ms)\n";
+        std::cout << "[DUAL][RUN5_AVG][MAX ] result=" << max_ans
+            << " avg=" << t_max_dual_avg << " ms"
+            << "\n (no_net=" << max_compute_no_net << " ms, comm=" << max_comm << " ms)\n";
+        std::cout << "[DUAL][RUN5_AVG][SORT] done   avg=" << t_sort_dual_avg
+            << " ms"
+            << "\n (no_net=" << sort_compute_no_net << " ms, comm=" << sort_comm << " ms)\n";
 
         double t_total_dual_avg = t_sum_dual_avg + t_max_dual_avg + t_sort_dual_avg;
         std::cout << "[DUAL][RUN5_AVG][TOTAL] avg=" << t_total_dual_avg << " ms\n\n";
+        std::cout << "[DUAL][RUN5_AVG][TOTAL] avg ( no_net ) =" << total_no_net << " ms\n\n";
 
         // 单次结果抽检打印（不放进 run5 里）//
         std::cout << std::fixed << std::setprecision(10);
@@ -508,6 +639,7 @@ int main() {
         return 1;
     }
 
+    std::cout << "\n ";
     system("pause");
 
 }
